@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baru — Music Adapter Test</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg: #0e0e0e;
+  --surface: #161616;
+  --border: #2a2a2a;
+  --text: #f0f0f0;
+  --muted: #666;
+  --accent: #ff4d00;
+  --green: #00e676;
+  --blue: #4db6ff;
+  --yellow: #ffd740;
+  --purple: #ce93d8;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  min-height: 100vh;
+  padding: 40px;
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+h1 span { color: var(--accent); }
+
+.subtitle {
+  color: var(--muted);
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 36px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.panel-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+/* Song track display */
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.segment {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.segment::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 3px 0 0 3px;
+}
+
+.segment.type-intro::before { background: var(--blue); }
+.segment.type-verse::before { background: var(--green); }
+.segment.type-chorus::before { background: var(--accent); }
+.segment.type-bridge::before { background: var(--purple); }
+.segment.type-outro::before { background: var(--yellow); }
+
+.segment:hover { border-color: #444; background: #1c1c1c; }
+.segment.selected { border-color: var(--accent); background: rgba(255,77,0,0.05); }
+.segment.swapped {
+  animation: flashSwap 0.6s ease;
+}
+
+@keyframes flashSwap {
+  0% { background: rgba(0,230,118,0.25); border-color: var(--green); }
+  100% { background: transparent; border-color: var(--border); }
+}
+
+.seg-index {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.seg-type {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.type-intro .seg-type { background: rgba(77,182,255,0.15); color: var(--blue); }
+.type-verse .seg-type { background: rgba(0,230,118,0.12); color: var(--green); }
+.type-chorus .seg-type { background: rgba(255,77,0,0.15); color: var(--accent); }
+.type-bridge .seg-type { background: rgba(206,147,216,0.15); color: var(--purple); }
+.type-outro .seg-type { background: rgba(255,215,64,0.12); color: var(--yellow); }
+
+.seg-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.seg-bars {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.seg-key {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* Controls */
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ctrl-section {
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 10px;
+}
+
+.ctrl-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ctrl-title .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: #1a1a1a;
+  color: var(--text);
+  transition: all 0.15s;
+  font-weight: 500;
+}
+
+.btn:hover { border-color: #444; background: #222; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
+.btn.primary:hover { background: #e04400; }
+.btn.green { background: rgba(0,230,118,0.1); border-color: var(--green); color: var(--green); }
+.btn.green:hover { background: rgba(0,230,118,0.2); }
+
+select {
+  padding: 8px 12px;
+  background: #1a1a1a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+select:focus { outline: none; border-color: #444; }
+
+input[type=text] {
+  padding: 8px 12px;
+  background: #1a1a1a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  width: 100%;
+}
+
+input:focus { outline: none; border-color: var(--accent); }
+
+/* Log */
+.log {
+  background: #080808;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.8;
+  height: 200px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.log-entry { display: flex; gap: 10px; }
+.log-time { color: var(--muted); flex-shrink: 0; }
+.log-msg { color: var(--text); }
+.log-msg.success { color: var(--green); }
+.log-msg.error { color: var(--accent); }
+.log-msg.info { color: var(--blue); }
+.log-msg.warn { color: var(--yellow); }
+
+/* Stats bar */
+.stats-bar {
+  display: flex;
+  gap: 20px;
+  padding: 14px 18px;
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.stat { display: flex; gap: 8px; align-items: center; }
+.stat-label { color: var(--muted); }
+.stat-value { font-weight: 500; }
+.stat-value.green { color: var(--green); }
+.stat-value.accent { color: var(--accent); }
+.stat-value.blue { color: var(--blue); }
+
+/* Version history */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.hist-item {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 6px 10px;
+  background: #111;
+  border-radius: 4px;
+}
+
+.hist-ver { color: var(--accent); flex-shrink: 0; }
+.hist-op { color: var(--muted); }
+.hist-detail { color: var(--text); flex: 1; }
+
+/* Full width bottom */
+.full-panel {
+  grid-column: 1 / -1;
+}
+</style>
+</head>
+<body>
+
+<h1>BARU <span>×</span> Music Adapter</h1>
+<div class="subtitle">// live test — segment swap on song structure</div>
+
+<!-- Stats -->
+<div class="stats-bar">
+  <div class="stat"><span class="stat-label">version</span><span class="stat-value accent" id="statVer">v0</span></div>
+  <div class="stat"><span class="stat-label">segments</span><span class="stat-value blue" id="statSegs">0</span></div>
+  <div class="stat"><span class="stat-label">swaps run</span><span class="stat-value green" id="statSwaps">0</span></div>
+  <div class="stat"><span class="stat-label">segments changed last op</span><span class="stat-value" id="statChanged">—</span></div>
+  <div class="stat"><span class="stat-label">segments preserved</span><span class="stat-value green" id="statPreserved">—</span></div>
+</div>
+
+<div class="layout">
+  <!-- Left: song structure -->
+  <div class="panel">
+    <div class="panel-label">Current Song Structure</div>
+    <div class="track-list" id="trackList"></div>
+    <div class="btn-row">
+      <button class="btn green" onclick="resetSong()">↺ Reset to default</button>
+      <button class="btn" onclick="exportStructure()">Export JSON</button>
+    </div>
+  </div>
+
+  <!-- Right: controls -->
+  <div class="panel">
+    <div class="panel-label">Baru Operations</div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-title"><div class="dot"></div>Swap Segment</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="swapTarget" style="flex:1">
+          <option value="">Select segment...</option>
+        </select>
+        <select id="swapNewType" style="flex:1">
+          <option value="intro">→ Intro</option>
+          <option value="verse">→ Verse</option>
+          <option value="chorus">→ Chorus</option>
+          <option value="bridge">→ Bridge</option>
+          <option value="outro">→ Outro</option>
+        </select>
+      </div>
+      <div style="margin-bottom:8px">
+        <input type="text" id="swapNewName" placeholder="New segment name (optional)">
+      </div>
+      <button class="btn primary" onclick="runSwap()">Run swap()</button>
+    </div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-title"><div class="dot" style="background:var(--blue)"></div>Move Segment</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="moveFrom" style="flex:1">
+          <option value="">From position...</option>
+        </select>
+        <select id="moveTo" style="flex:1">
+          <option value="">To position...</option>
+        </select>
+      </div>
+      <button class="btn" style="border-color:var(--blue);color:var(--blue)" onclick="runMove()">Run move()</button>
+    </div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-title"><div class="dot" style="background:var(--green)"></div>Insert Segment</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="insertAfter" style="flex:1">
+          <option value="-1">At beginning</option>
+        </select>
+        <select id="insertType" style="flex:1">
+          <option value="verse">Verse</option>
+          <option value="chorus">Chorus</option>
+          <option value="bridge">Bridge</option>
+          <option value="intro">Intro</option>
+          <option value="outro">Outro</option>
+        </select>
+      </div>
+      <input type="text" id="insertName" placeholder="Segment name" style="margin-bottom:8px">
+      <button class="btn green" onclick="runInsert()">Run insert()</button>
+    </div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-title"><div class="dot" style="background:var(--accent)"></div>Remove Segment</div>
+      <div style="display:flex;gap:8px">
+        <select id="removeTarget" style="flex:1">
+          <option value="">Select segment...</option>
+        </select>
+        <button class="btn" style="border-color:#e03e3e;color:#e03e3e" onclick="runRemove()">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="panel full-panel">
+    <div class="panel-label">Operation Log</div>
+    <div class="log" id="opLog">
+      <div class="log-entry"><span class="log-time">00:00</span><span class="log-msg info">Baru MusicAdapter initialized. Ready.</span></div>
+    </div>
+  </div>
+
+  <!-- Version history -->
+  <div class="panel full-panel">
+    <div class="panel-label">Version History</div>
+    <div class="history" id="versionHistory"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// BARU CORE ENGINE
+// ============================================================
+class Baru {
+  constructor(adapter) {
+    this.adapter = adapter;
+    this.segments = [];
+    this.version = 0;
+    this.history = [];
+  }
+
+  load(system) {
+    this.segments = this.adapter.decompose(system);
+    this._record('load', `Loaded ${this.segments.length} segments`);
+    return this;
+  }
+
+  swap(intent) {
+    const before = this.segments.map(s => s.id);
+    const targets = this._identify(intent);
+    if (targets.length === 0) {
+      return { changed: 0, preserved: this.segments.length, error: 'No matching segments' };
+    }
+    const patches = targets.map(seg => this.adapter.transform(seg, intent));
+    const result = this._apply(patches);
+    const changed = patches.length;
+    const preserved = this.segments.length - changed;
+    this._record('swap', intent.description || `Swapped ${changed} segment(s)`);
+    this.version++;
+    return { changed, preserved, segments: this.segments };
+  }
+
+  insert(intent) {
+    const newSeg = this.adapter.create(intent);
+    const idx = intent.afterIndex !== undefined ? intent.afterIndex + 1 : this.segments.length;
+    this.segments.splice(idx, 0, newSeg);
+    this.version++;
+    this._record('insert', `Inserted "${newSeg.name}" at position ${idx}`);
+    return { inserted: newSeg, total: this.segments.length };
+  }
+
+  remove(intent) {
+    const idx = this.segments.findIndex(s => s.id === intent.targetId);
+    if (idx === -1) return { error: 'Segment not found' };
+    const removed = this.segments.splice(idx, 1)[0];
+    this.version++;
+    this._record('remove', `Removed "${removed.name}"`);
+    return { removed, remaining: this.segments.length };
+  }
+
+  move(fromIdx, toIdx) {
+    if (fromIdx === toIdx) return;
+    const seg = this.segments.splice(fromIdx, 1)[0];
+    this.segments.splice(toIdx, 0, seg);
+    this.version++;
+    this._record('move', `Moved "${seg.name}" from pos ${fromIdx} → ${toIdx}`);
+    return { moved: seg, structure: this.segments };
+  }
+
+  _identify(intent) {
+    return this.segments.filter(seg => this.adapter.affected(seg, intent));
+  }
+
+  _apply(patches) {
+    const patchMap = new Map(patches.map(p => [p.id, p]));
+    this.segments = this.segments.map(seg =>
+      patchMap.has(seg.id) ? patchMap.get(seg.id) : seg
+    );
+    return this.segments;
+  }
+
+  _record(op, detail) {
+    this.history.push({ version: this.version, op, detail, time: new Date() });
+  }
+
+  recompose() {
+    return this.adapter.recompose(this.segments);
+  }
+}
+
+// ============================================================
+// MUSIC ADAPTER
+// ============================================================
+const MusicAdapter = {
+  decompose(song) {
+    return song.sections.map((s, i) => ({
+      id: s.id || `seg_${i}_${Date.now()}`,
+      name: s.name,
+      type: s.type,
+      bars: s.bars || 8,
+      key: s.key || 'C',
+      bpm: s.bpm || 120,
+      index: i
+    }));
+  },
+
+  affected(seg, intent) {
+    return seg.id === intent.targetId;
+  },
+
+  transform(seg, intent) {
+    return {
+      ...seg,
+      type: intent.newType || seg.type,
+      name: intent.newName || seg.name,
+      id: seg.id // preserve ID — only the segment changes, ID stays
+    };
+  },
+
+  create(intent) {
+    return {
+      id: `seg_${Date.now()}`,
+      name: intent.name || `New ${intent.type}`,
+      type: intent.type || 'verse',
+      bars: intent.bars || 8,
+      key: intent.key || 'C',
+      bpm: intent.bpm || 120
+    };
+  },
+
+  recompose(segments) {
+    return { sections: segments, totalBars: segments.reduce((a, s) => a + s.bars, 0) };
+  }
+};
+
+// ============================================================
+// DEFAULT SONG
+// ============================================================
+const defaultSong = {
+  sections: [
+    { id: 'seg_intro', name: 'Intro', type: 'intro', bars: 4, key: 'Am', bpm: 95 },
+    { id: 'seg_v1', name: 'Verse 1', type: 'verse', bars: 8, key: 'Am', bpm: 95 },
+    { id: 'seg_pre', name: 'Pre-Chorus', type: 'verse', bars: 4, key: 'F', bpm: 95 },
+    { id: 'seg_ch1', name: 'Chorus 1', type: 'chorus', bars: 8, key: 'C', bpm: 95 },
+    { id: 'seg_v2', name: 'Verse 2', type: 'verse', bars: 8, key: 'Am', bpm: 95 },
+    { id: 'seg_ch2', name: 'Chorus 2', type: 'chorus', bars: 8, key: 'C', bpm: 95 },
+    { id: 'seg_br', name: 'Bridge', type: 'bridge', bars: 8, key: 'Dm', bpm: 95 },
+    { id: 'seg_ch3', name: 'Final Chorus', type: 'chorus', bars: 16, key: 'C', bpm: 95 },
+    { id: 'seg_outro', name: 'Outro', type: 'outro', bars: 4, key: 'Am', bpm: 95 },
+  ]
+};
+
+// ============================================================
+// STATE
+// ============================================================
+let baru = new Baru(MusicAdapter);
+let swapCount = 0;
+let startTime = Date.now();
+
+function init() {
+  baru.load(defaultSong);
+  render();
+  log('Loaded song: 9 segments, 76 total bars', 'info');
+}
+
+function resetSong() {
+  baru = new Baru(MusicAdapter);
+  swapCount = 0;
+  baru.load(defaultSong);
+  render();
+  log('↺ Reset to default song structure', 'warn');
+  document.getElementById('versionHistory').innerHTML = '';
+}
+
+function render() {
+  renderTrackList();
+  renderSelects();
+  updateStats();
+}
+
+function renderTrackList() {
+  const list = document.getElementById('trackList');
+  list.innerHTML = '';
+  baru.segments.forEach((seg, i) => {
+    const el = document.createElement('div');
+    el.className = `segment type-${seg.type}`;
+    el.id = `seg_el_${seg.id}`;
+    el.innerHTML = `
+      <div class="seg-index">${i + 1}</div>
+      <div class="seg-type">${seg.type}</div>
+      <div class="seg-name">${seg.name}</div>
+      <div class="seg-key">${seg.key}</div>
+      <div class="seg-bars">${seg.bars}b</div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+function renderSelects() {
+  const ids = ['swapTarget', 'removeTarget'];
+  const posIds = ['moveFrom', 'moveTo', 'insertAfter'];
+
+  ids.forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = '<option value="">Select segment...</option>';
+    baru.segments.forEach((seg, i) => {
+      sel.innerHTML += `<option value="${seg.id}">[${i+1}] ${seg.name}</option>`;
+    });
+  });
+
+  posIds.forEach(id => {
+    const sel = document.getElementById(id);
+    const isInsert = id === 'insertAfter';
+    sel.innerHTML = isInsert ? '<option value="-1">At beginning</option>' : '<option value="">Select position...</option>';
+    baru.segments.forEach((seg, i) => {
+      sel.innerHTML += `<option value="${i}">[${i+1}] ${seg.name}</option>`;
+    });
+  });
+}
+
+function updateStats() {
+  document.getElementById('statVer').textContent = `v${baru.version}`;
+  document.getElementById('statSegs').textContent = baru.segments.length;
+  document.getElementById('statSwaps').textContent = swapCount;
+}
+
+// ============================================================
+// OPERATIONS
+// ============================================================
+function runSwap() {
+  const targetId = document.getElementById('swapTarget').value;
+  const newType = document.getElementById('swapNewType').value;
+  const newName = document.getElementById('swapNewName').value.trim();
+
+  if (!targetId) { log('Select a segment to swap', 'error'); return; }
+
+  const seg = baru.segments.find(s => s.id === targetId);
+  const intent = {
+    targetId,
+    newType,
+    newName: newName || undefined,
+    description: `Swap "${seg.name}" → ${newType}${newName ? ` ("${newName}")` : ''}`
+  };
+
+  const result = baru.swap(intent);
+  swapCount++;
+
+  // Flash the changed segment
+  const el = document.getElementById(`seg_el_${targetId}`);
+  render();
+  setTimeout(() => {
+    const newEl = document.getElementById(`seg_el_${targetId}`);
+    if (newEl) { newEl.classList.add('swapped'); setTimeout(() => newEl.classList.remove('swapped'), 700); }
+  }, 10);
+
+  document.getElementById('statChanged').textContent = `${result.changed} segment(s)`;
+  document.getElementById('statPreserved').textContent = `${result.preserved} unchanged ✓`;
+
+  addHistoryItem(baru.version, 'swap', intent.description);
+  log(`swap() → changed: ${result.changed}, preserved: ${result.preserved}`, 'success');
+  document.getElementById('swapNewName').value = '';
+}
+
+function runMove() {
+  const from = parseInt(document.getElementById('moveFrom').value);
+  const to = parseInt(document.getElementById('moveTo').value);
+  if (isNaN(from) || isNaN(to)) { log('Select both positions', 'error'); return; }
+  if (from === to) { log('Source and destination are the same', 'error'); return; }
+
+  const seg = baru.segments[from];
+  baru.move(from, to);
+  render();
+
+  const changed = 1;
+  const preserved = baru.segments.length - 1;
+  document.getElementById('statChanged').textContent = `${changed} segment moved`;
+  document.getElementById('statPreserved').textContent = `${preserved} unchanged ✓`;
+  swapCount++;
+  updateStats();
+
+  addHistoryItem(baru.version, 'move', `"${seg.name}" pos ${from+1} → ${to+1}`);
+  log(`move() → "${seg.name}" moved from position ${from+1} to ${to+1}`, 'success');
+}
+
+function runInsert() {
+  const afterIndex = parseInt(document.getElementById('insertAfter').value);
+  const type = document.getElementById('insertType').value;
+  const name = document.getElementById('insertName').value.trim() || `New ${type}`;
+
+  const intent = { afterIndex, type, name };
+  const result = baru.insert(intent);
+  render();
+  swapCount++;
+  updateStats();
+
+  document.getElementById('statChanged').textContent = `1 inserted`;
+  document.getElementById('statPreserved').textContent = `${result.total - 1} unchanged ✓`;
+
+  addHistoryItem(baru.version, 'insert', `"${name}" (${type}) at pos ${afterIndex + 2}`);
+  log(`insert() → "${name}" added. Total segments: ${result.total}`, 'success');
+  document.getElementById('insertName').value = '';
+}
+
+function runRemove() {
+  const targetId = document.getElementById('removeTarget').value;
+  if (!targetId) { log('Select a segment to remove', 'error'); return; }
+
+  const result = baru.remove({ targetId });
+  if (result.error) { log(result.error, 'error'); return; }
+
+  render();
+  swapCount++;
+  updateStats();
+
+  document.getElementById('statChanged').textContent = `1 removed`;
+  document.getElementById('statPreserved').textContent = `${result.remaining} unchanged ✓`;
+
+  addHistoryItem(baru.version, 'remove', `"${result.removed.name}" removed`);
+  log(`remove() → "${result.removed.name}" removed. Remaining: ${result.remaining}`, 'success');
+}
+
+function exportStructure() {
+  const song = baru.recompose();
+  const json = JSON.stringify(song, null, 2);
+  log(`export() → ${baru.segments.length} segments, ${song.totalBars} total bars`, 'info');
+  // Show in console + copy
+  console.log('Baru export:', json);
+  navigator.clipboard?.writeText(json).then(() => log('Copied to clipboard', 'info'));
+}
+
+// ============================================================
+// LOG + HISTORY
+// ============================================================
+function log(msg, type = '') {
+  const logEl = document.getElementById('opLog');
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const time = elapsed.padStart(5, ' ');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `<span class="log-time">${time}s</span><span class="log-msg ${type}">${msg}</span>`;
+  logEl.appendChild(entry);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function addHistoryItem(ver, op, detail) {
+  const hist = document.getElementById('versionHistory');
+  const item = document.createElement('div');
+  item.className = 'hist-item';
+  item.innerHTML = `
+    <span class="hist-ver">v${ver}</span>
+    <span class="hist-op">${op}()</span>
+    <span class="hist-detail">${detail}</span>
+  `;
+  hist.insertBefore(item, hist.firstChild);
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baru — Music Maker</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0e0e0e;--surface:#161616;--surface2:#1d1d1d;
+  --border:#2a2a2a;--text:#f0f0f0;--muted:#555;
+  --accent:#ff4d00;--green:#00e676;--blue:#4db6ff;
+  --yellow:#ffd740;--orange:#ff9800;--purple:#ce93d8;
+  --red:#f44336;
+}
+body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;padding:32px 40px;}
+
+/* ── HEADER ── */
+h1{font-size:26px;font-weight:800;letter-spacing:-0.02em;margin-bottom:4px;}
+h1 span{color:var(--accent);}
+.subtitle{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px;margin-bottom:32px;}
+
+/* ── CONTROLS ── */
+.controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:28px;}
+button{
+  font-family:'Syne',sans-serif;font-size:13px;font-weight:600;
+  padding:9px 18px;border-radius:8px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--text);cursor:pointer;
+  transition:all 0.15s;letter-spacing:0.02em;
+}
+button:hover{background:#252525;border-color:#444;}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+button.primary:hover{background:#e04500;}
+button.active{background:var(--green);border-color:var(--green);color:#000;}
+button:disabled{opacity:0.3;cursor:default;}
+.sep{width:1px;height:28px;background:var(--border);}
+.ctrl-group{display:flex;align-items:center;gap:8px;}
+label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);}
+select{
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  background:var(--surface2);color:var(--text);border:1px solid var(--border);
+  border-radius:6px;padding:7px 10px;cursor:pointer;
+}
+input[type=range]{
+  -webkit-appearance:none;width:90px;height:4px;border-radius:2px;
+  background:var(--border);cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:var(--accent);cursor:pointer;
+}
+
+/* ── STATUS BANNER ── */
+.status{
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:10px 16px;border-radius:8px;margin-bottom:24px;
+  border:1px solid var(--border);background:var(--surface);
+  color:var(--muted);min-height:42px;display:flex;align-items:center;gap:8px;
+}
+.status.perfect{border-color:var(--green);color:var(--green);}
+.status.broken{border-color:var(--red);color:var(--red);}
+.status.fixed{border-color:var(--orange);color:var(--orange);}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0;}
+
+/* ── NOTE DISPLAY ── */
+.roll-wrap{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:20px;margin-bottom:24px;overflow-x:auto;
+}
+.roll-label{
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.15em;
+  color:var(--muted);text-transform:uppercase;margin-bottom:16px;
+}
+.roll{
+  display:flex;align-items:flex-end;gap:6px;
+  min-height:140px;padding-bottom:4px;position:relative;
+}
+
+.note{
+  display:flex;flex-direction:column;align-items:center;
+  gap:4px;cursor:pointer;position:relative;
+}
+.note-block{
+  width:44px;border-radius:6px;display:flex;align-items:center;
+  justify-content:center;font-weight:700;font-size:13px;
+  transition:all 0.2s;position:relative;
+  border:2px solid transparent;
+}
+.note-block.original{background:#1e3a5f;color:var(--blue);border-color:#2a5080;}
+.note-block.correction{background:#3d2200;color:var(--orange);border-color:#6b3d00;}
+.note-block.playing{
+  border-color:var(--yellow) !important;
+  box-shadow:0 0 14px rgba(255,215,64,0.5);
+  transform:scale(1.08);
+}
+.note-interval{
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);
+}
+.note-index{
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:#333;
+}
+
+.state-arrow{
+  display:flex;align-items:center;color:var(--border);font-size:18px;
+  padding-bottom:28px;flex-shrink:0;
+}
+.state-zero{
+  width:12px;height:12px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px rgba(0,230,118,0.6);margin-bottom:28px;flex-shrink:0;
+  align-self:flex-end;
+}
+
+/* ── STAFF (mini piano roll height) ── */
+.staff-grid{
+  position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;
+  display:flex;flex-direction:column;justify-content:space-between;
+}
+.staff-line{height:1px;background:#1e1e1e;}
+
+/* ── BARU LOG ── */
+.log-wrap{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:20px;margin-bottom:24px;
+}
+.log-label{
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.15em;
+  color:var(--muted);text-transform:uppercase;margin-bottom:12px;
+}
+.log-entries{display:flex;flex-direction:column;gap:6px;}
+.log-entry{
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--muted);line-height:1.6;
+}
+.log-entry .tag{margin-right:8px;font-weight:600;}
+.log-entry .tag.gen{color:var(--blue);}
+.log-entry .tag.brk{color:var(--red);}
+.log-entry .tag.fix{color:var(--orange);}
+.log-entry .tag.ok{color:var(--green);}
+.log-entry .segs{color:var(--text);}
+.log-entry .note-name{color:var(--yellow);}
+
+/* ── ADAPTER INFO ── */
+.adapters{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;}
+.adapter-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:16px;cursor:pointer;transition:border-color 0.15s;
+}
+.adapter-card:hover{border-color:#444;}
+.adapter-card.selected{border-color:var(--accent);}
+.adapter-name{font-weight:700;font-size:14px;margin-bottom:4px;}
+.adapter-desc{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);line-height:1.6;}
+.adapter-segs{
+  display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;
+}
+.seg-pill{
+  font-family:'JetBrains Mono',monospace;font-size:10px;
+  padding:2px 6px;border-radius:4px;background:var(--surface2);
+  border:1px solid var(--border);color:var(--muted);
+}
+
+@media(max-width:700px){
+  body{padding:20px;}
+  .adapters{grid-template-columns:1fr;}
+  .controls{gap:8px;}
+}
+</style>
+</head>
+<body>
+
+<h1>Baru <span>Music</span></h1>
+<p class="subtitle">generate → break → fix  /  every melody closes with mathematics</p>
+
+<!-- ── ADAPTER SELECTOR ── -->
+<div class="adapters">
+  <div class="adapter-card selected" onclick="selectAdapter('melody')" id="card-melody">
+    <div class="adapter-name">Melody</div>
+    <div class="adapter-desc">Diatonic intervals mod 12.<br>Phrase closes when pitch class returns to tonic.</div>
+    <div class="adapter-segs" id="pills-melody"></div>
+  </div>
+  <div class="adapter-card" onclick="selectAdapter('harmony')" id="card-harmony">
+    <div class="adapter-name">Harmony</div>
+    <div class="adapter-desc">Circle of fifths mod 12.<br>Progression closes when it returns to tonic chord.</div>
+    <div class="adapter-segs" id="pills-harmony"></div>
+  </div>
+  <div class="adapter-card" onclick="selectAdapter('rhythm')" id="card-rhythm">
+    <div class="adapter-name">Rhythm</div>
+    <div class="adapter-desc">Note durations in 4/4 time.<br>Pattern closes on a barline (state mod 4 = 0).</div>
+    <div class="adapter-segs" id="pills-rhythm"></div>
+  </div>
+</div>
+
+<!-- ── CONTROLS ── -->
+<div class="controls">
+  <button class="primary" onclick="generate()">Generate</button>
+  <button onclick="breakLoop()" id="btn-break" disabled>Break it</button>
+  <button onclick="fixLoop()" id="btn-fix" disabled>Fix with Baru</button>
+  <div class="sep"></div>
+  <button onclick="playSeq()" id="btn-play" disabled>▶ Play</button>
+  <button onclick="stopPlay()" id="btn-stop" disabled>■ Stop</button>
+  <div class="sep"></div>
+  <div class="ctrl-group">
+    <label>BPM</label>
+    <input type="range" id="bpm-slider" min="60" max="200" value="120" oninput="updateBpm(this.value)">
+    <label id="bpm-val">120</label>
+  </div>
+  <div class="ctrl-group">
+    <label>Notes</label>
+    <select id="sel-n">
+      <option value="6">6</option>
+      <option value="8" selected>8</option>
+      <option value="12">12</option>
+      <option value="16">16</option>
+    </select>
+  </div>
+  <div class="ctrl-group">
+    <label>Style</label>
+    <select id="sel-style">
+      <option value="mixed">Mixed</option>
+      <option value="ascending">Ascending</option>
+      <option value="descending">Descending</option>
+      <option value="stepwise">Stepwise</option>
+      <option value="leaping">Leaping</option>
+    </select>
+  </div>
+</div>
+
+<!-- ── STATUS ── -->
+<div class="status" id="status">
+  <div class="dot"></div>
+  <span>Click Generate to create a melody.</span>
+</div>
+
+<!-- ── NOTE DISPLAY ── -->
+<div class="roll-wrap">
+  <div class="roll-label">Sequence</div>
+  <div class="roll" id="roll"></div>
+</div>
+
+<!-- ── BARU LOG ── -->
+<div class="log-wrap">
+  <div class="log-label">Baru Log</div>
+  <div class="log-entries" id="log"></div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+//  BARU ENGINE (JS port)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function baruRun(adapter, segs) {
+  let state = adapter.start;
+  for (const s of segs) state = adapter.compose(state, s);
+  return { segments: [...segs], state, perfect: adapter.perfect(state) };
+}
+
+function baruCorrect(adapter, segs) {
+  const loop = baruRun(adapter, segs);
+  if (loop.perfect) return { before: segs, after: segs, swaps: 0, method: 'already perfect' };
+
+  // analytic 1-swap
+  if (typeof loop.state === 'number') {
+    const segSet = new Set(adapter.segments);
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
+      if (typeof s !== 'number') continue;
+      const needed = s - loop.state;
+      if (needed !== s && segSet.has(needed)) {
+        const candidate = [...segs];
+        candidate[i] = needed;
+        if (baruRun(adapter, candidate).perfect) {
+          return { before: segs, after: candidate, swaps: 1,
+                   method: `analytic swap pos=${i} ${s}→${needed}`, swapPos: i };
+        }
+      }
+    }
+  }
+
+  // inverse append
+  const closure = adapter.inverse(loop.state);
+  const after = [...segs, ...closure];
+  return { before: segs, after, swaps: closure.length,
+           method: `inverse append ${JSON.stringify(closure)}`, appendCount: closure.length };
+}
+
+function baruGenerate(adapter, n, constraints) {
+  let segs = [];
+  let state = adapter.start;
+  const safetyBound = n * 3;
+
+  for (let iter = 0; iter < safetyBound; iter++) {
+    const closure = adapter.inverse(state);
+    if (segs.length + closure.length >= n) break;
+
+    let allowed = constraints ? constraints(state, segs) : adapter.segments;
+    if (!allowed || allowed.length === 0) break;
+
+    const s = allowed[Math.floor(Math.random() * allowed.length)];
+    segs.push(s);
+    state = adapter.compose(state, s);
+  }
+
+  const closure = adapter.inverse(state);
+  segs = [...segs, ...closure];
+  return baruRun(adapter, segs);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ADAPTERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DIATONIC = [+1,+2,+3,+4,+5,+7,+12,-1,-2,-3,-4,-5,-7,-12];
+const CHORD    = {'I':0,'V':1,'IV':-1,'ii':2,'vi':3,'iii':4};
+const DURATIONS= [0.5,1,2,4];
+
+function melodyInverse(s) {
+  s = ((s % 12) + 12) % 12;
+  const need = (12 - s) % 12;
+  if (need === 0) return [];
+  const candidates = [need, need - 12].sort((a,b) => Math.abs(a)-Math.abs(b));
+  for (const step of candidates)
+    if (DIATONIC.includes(step)) return [step];
+  for (const a of DIATONIC) {
+    const b = ((need - a) % 12 + 12) % 12;
+    for (const c of [b, b - 12])
+      if (DIATONIC.includes(c) && c !== 0) return [a, c];
+  }
+  return [];
+}
+
+function harmonyInverse(s) {
+  const need = ((-s) % 12 + 12) % 12;
+  if (need === 0) return [];
+  return need <= 6 ? Array(need).fill('V') : Array(12-need).fill('IV');
+}
+
+function rhythmInverse(s) {
+  let remaining = ((-s) % 4 + 4) % 4;
+  if (remaining < 1e-9) remaining = 4;
+  const result = [];
+  for (const d of [4,2,1,0.5]) {
+    while (remaining >= d - 1e-9) {
+      result.push(d);
+      remaining = Math.round((remaining - d) * 1e9) / 1e9;
+    }
+  }
+  return Math.abs(remaining) < 1e-9 ? result : [];
+}
+
+const ADAPTERS = {
+  melody: {
+    segments: DIATONIC,
+    start: 0,
+    compose: (s, x) => ((s + x) % 12 + 12) % 12,
+    perfect: s => s === 0,
+    inverse: melodyInverse,
+  },
+  harmony: {
+    segments: Object.keys(CHORD),
+    start: 0,
+    compose: (s, x) => ((s + CHORD[x]) % 12 + 12) % 12,
+    perfect: s => s === 0,
+    inverse: harmonyInverse,
+  },
+  rhythm: {
+    segments: DURATIONS,
+    start: 0,
+    compose: (s, x) => s + x,
+    perfect: s => s > 0 && Math.abs(s % 4) < 1e-9,
+    inverse: rhythmInverse,
+  },
+};
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  AUDIO ENGINE
+// ─────────────────────────────────────────────────────────────────────────────
+
+let audioCtx = null;
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// C4 = MIDI 60 = 261.63 Hz
+const C4_FREQ = 261.63;
+
+function midiToFreq(midi) {
+  return C4_FREQ * Math.pow(2, (midi - 60) / 12);
+}
+
+// Map pitch class + octave context → absolute semitones from C4
+function segToAbsolutePitch(segments, adapter) {
+  let abs = 0;   // starting at C4 (0 semitones from C4)
+  const pitches = [0];
+  if (adapter === ADAPTERS.melody) {
+    for (const s of segments) {
+      abs += s;
+      // keep in a comfortable range (roughly C3–C6)
+      pitches.push(abs);
+    }
+  } else if (adapter === ADAPTERS.harmony) {
+    // map chord function to bass note (root position)
+    const CHORD_MIDI = {'I':0,'ii':2,'iii':4,'IV':5,'V':7,'vi':9};
+    let cumulative = 0;
+    for (const s of segments) {
+      cumulative += CHORD[s];
+      // clamp to octave
+      const pc = ((cumulative % 12) + 12) % 12;
+      pitches.push(pc);
+    }
+  } else if (adapter === ADAPTERS.rhythm) {
+    // just repeat C4 but with different durations
+    for (const s of segments) pitches.push(0);
+  }
+  return pitches;
+}
+
+let scheduledNodes = [];
+let playbackTimeout = null;
+
+function stopPlay() {
+  scheduledNodes.forEach(n => { try { n.stop(); } catch(e){} });
+  scheduledNodes = [];
+  if (playbackTimeout) { clearTimeout(playbackTimeout); playbackTimeout = null; }
+  document.getElementById('btn-play').disabled = false;
+  document.getElementById('btn-stop').disabled = true;
+  clearHighlight();
+}
+
+function clearHighlight() {
+  document.querySelectorAll('.note-block').forEach(el => el.classList.remove('playing'));
+}
+
+let bpm = 120;
+function updateBpm(v) {
+  bpm = parseInt(v);
+  document.getElementById('bpm-val').textContent = v;
+}
+
+function playNote(freq, startTime, duration, ctx, vol=0.4, isChord=false) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'triangle';
+  osc.frequency.value = freq;
+
+  filter.type = 'lowpass';
+  filter.frequency.value = 2200;
+
+  // envelope
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(vol, startTime + 0.01);
+  gain.gain.exponentialRampToValueAtTime(vol * 0.4, startTime + Math.min(duration * 0.5, 0.2));
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration * 0.92);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+  scheduledNodes.push(osc);
+  return osc;
+}
+
+function playDroneNote(freq, startTime, duration, ctx) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.06, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+  scheduledNodes.push(osc);
+}
+
+function playSeq() {
+  if (!currentLoop) return;
+  stopPlay();
+  const ctx = getAudio();
+
+  document.getElementById('btn-play').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+
+  const segs = currentLoop.after || currentLoop.segments;
+  const adapter = ADAPTERS[currentAdapter];
+  const secPerBeat = 60 / bpm;
+  const noteLen = secPerBeat * 0.95;
+
+  let t = ctx.currentTime + 0.05;
+  const noteEls = document.querySelectorAll('.note-block');
+
+  // play a root drone on C throughout
+  playDroneNote(C4_FREQ / 2, t, segs.length * secPerBeat + 0.5, ctx);
+
+  const absP = segToAbsolutePitch(segs, adapter);
+
+  for (let i = 0; i < segs.length; i++) {
+    const noteStart = t + i * secPerBeat;
+    const pitchOffset = absP[i + 1] !== undefined ? absP[i + 1] : absP[i];
+    let freq;
+
+    if (adapter === ADAPTERS.melody) {
+      // keep melody in range C4–C5
+      let semi = pitchOffset;
+      while (semi > 12) semi -= 12;
+      while (semi < -12) semi += 12;
+      freq = midiToFreq(60 + semi);
+    } else if (adapter === ADAPTERS.harmony) {
+      // play chord root + third + fifth
+      const pc = ((pitchOffset % 12) + 12) % 12;
+      freq = midiToFreq(48 + pc);  // bass note an octave below
+      playNote(midiToFreq(48 + pc + 4), noteStart, noteLen * 0.8, ctx, 0.2);
+      playNote(midiToFreq(48 + pc + 7), noteStart, noteLen * 0.8, ctx, 0.15);
+    } else if (adapter === ADAPTERS.rhythm) {
+      freq = C4_FREQ;  // same pitch, different lengths
+    }
+
+    let noteDuration;
+    if (adapter === ADAPTERS.rhythm) {
+      noteDuration = segs[i] * secPerBeat * 0.9;
+    } else {
+      noteDuration = noteLen;
+    }
+
+    playNote(freq, noteStart, noteDuration, ctx, 0.45);
+
+    // highlight note in UI
+    ;((idx, start) => {
+      const delay = (start - ctx.currentTime) * 1000;
+      const timer = setTimeout(() => {
+        clearHighlight();
+        const blocks = document.querySelectorAll('.note-block');
+        if (blocks[idx]) blocks[idx].classList.add('playing');
+      }, delay);
+      scheduledNodes.push({ stop: () => clearTimeout(timer) });
+    })(i, noteStart);
+  }
+
+  // final closure note (return to C)
+  const endTime = t + segs.length * secPerBeat;
+  if (currentLoop.perfect || (currentLoop.after && baruRun(adapter, currentLoop.after).perfect)) {
+    playNote(midiToFreq(60), endTime, noteLen * 1.5, ctx, 0.5);  // C4 resolution
+  }
+
+  const totalMs = (endTime - ctx.currentTime + noteLen * 1.5) * 1000;
+  playbackTimeout = setTimeout(() => {
+    clearHighlight();
+    document.getElementById('btn-play').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+  }, totalMs + 200);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+let currentAdapter = 'melody';
+let currentLoop    = null;   // { segments, state, perfect }  — generated loop
+let brokenSegs     = null;   // segments after breaking
+let fixedRam       = null;   // { before, after, swaps, method }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DISPLAY HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PITCH_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+const INTERVAL_NAMES = {
+  '+1':'m2','+2':'M2','+3':'m3','+4':'M3','+5':'P4','+7':'P5','+12':'P8',
+  '-1':'-m2','-2':'-M2','-3':'-m3','-4':'-M3','-5':'-P4','-7':'-P5','-12':'-P8',
+};
+
+function noteNameAtPitch(absoluteSemis) {
+  const pc = ((absoluteSemis % 12) + 12) % 12;
+  return PITCH_NAMES[pc];
+}
+
+function intervalLabel(seg, adapter) {
+  if (adapter === 'melody') {
+    const sign = seg > 0 ? '+' : '';
+    const name = INTERVAL_NAMES[sign + seg] || (sign + seg);
+    return `${sign}${seg} (${name})`;
+  }
+  if (adapter === 'harmony') return String(seg);
+  if (adapter === 'rhythm') return `♩=${seg}`;
+  return String(seg);
+}
+
+function noteDisplayName(seg, i, cumPitch, adapter) {
+  if (adapter === 'melody') return noteNameAtPitch(cumPitch);
+  if (adapter === 'harmony') return String(seg);
+  if (adapter === 'rhythm') {
+    const map = {0.5:'♪',1:'♩',2:'♩.',4:'𝅗𝅥'};
+    return map[seg] || seg;
+  }
+  return String(seg);
+}
+
+// height in px for the note block based on pitch (melody only)
+function noteHeight(cumPitch, adapter) {
+  if (adapter !== 'melody') return 52;
+  // map semitones to vertical position: 2 octaves range (24 semitones)
+  const normalized = (cumPitch + 12) / 24;  // 0..1
+  return 36 + normalized * 60;  // 36px..96px
+}
+
+function renderRoll(segs, correctionStart, adapter) {
+  const roll = document.getElementById('roll');
+  roll.innerHTML = '';
+
+  let cumPitch = 0;
+  const absP = segToAbsolutePitch(segs, ADAPTERS[adapter]);
+
+  for (let i = 0; i < segs.length; i++) {
+    cumPitch = absP[i + 1] !== undefined ? absP[i + 1] : cumPitch;
+
+    const isCorrection = correctionStart !== null && i >= correctionStart;
+    const h = noteHeight(cumPitch, adapter);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'note';
+
+    const block = document.createElement('div');
+    block.className = 'note-block ' + (isCorrection ? 'correction' : 'original');
+    block.style.height = h + 'px';
+    block.textContent = noteDisplayName(segs[i], i, cumPitch, adapter);
+    block.title = intervalLabel(segs[i], adapter);
+
+    const intLabel = document.createElement('div');
+    intLabel.className = 'note-interval';
+    if (adapter === 'melody') {
+      const sign = segs[i] > 0 ? '+' : '';
+      intLabel.textContent = sign + segs[i];
+    } else if (adapter === 'harmony') {
+      intLabel.textContent = segs[i];
+    } else {
+      intLabel.textContent = segs[i];
+    }
+
+    wrapper.appendChild(block);
+    wrapper.appendChild(intLabel);
+    roll.appendChild(wrapper);
+
+    // arrow between notes
+    if (i < segs.length - 1) {
+      const arrow = document.createElement('div');
+      arrow.className = 'state-arrow';
+      arrow.style.paddingBottom = (h / 2) + 'px';
+      arrow.textContent = '›';
+      roll.appendChild(arrow);
+    }
+  }
+
+  // check perfect close
+  const finalState = baruRun(ADAPTERS[adapter], segs);
+  if (finalState.perfect) {
+    const dot = document.createElement('div');
+    dot.className = 'state-zero';
+    dot.title = 'Perfect closure — state = 0';
+    roll.appendChild(dot);
+  }
+}
+
+function addLog(type, msg) {
+  const log = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `<span class="tag ${type}">[${type}]</span><span class="segs">${msg}</span>`;
+  log.prepend(entry);
+  // keep last 8 entries
+  while (log.children.length > 8) log.removeChild(log.lastChild);
+}
+
+function setStatus(text, cls) {
+  const el = document.getElementById('status');
+  el.className = 'status ' + (cls || '');
+  el.innerHTML = `<div class="dot"></div><span>${text}</span>`;
+}
+
+function segString(segs, adapter) {
+  if (adapter === 'melody') {
+    let abs = 0;
+    return segs.map(s => {
+      abs += s;
+      const sign = s > 0 ? '+' : '';
+      return `<span class="note-name">${noteNameAtPitch(abs)}</span>(${sign}${s})`;
+    }).join(' ');
+  }
+  return segs.map(s => `<span class="note-name">${s}</span>`).join(' ');
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ACTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function selectAdapter(name) {
+  currentAdapter = name;
+  document.querySelectorAll('.adapter-card').forEach(el => el.classList.remove('selected'));
+  document.getElementById('card-' + name).classList.add('selected');
+  currentLoop = null;
+  brokenSegs = null;
+  fixedRam = null;
+  document.getElementById('roll').innerHTML = '';
+  document.getElementById('log').innerHTML = '';
+  setStatus('Click Generate to create a new sequence.', '');
+  document.getElementById('btn-break').disabled = true;
+  document.getElementById('btn-fix').disabled   = true;
+  document.getElementById('btn-play').disabled  = true;
+  stopPlay();
+}
+
+function getConstraints() {
+  const style = document.getElementById('sel-style').value;
+  const adapter = ADAPTERS[currentAdapter];
+
+  if (currentAdapter === 'melody') {
+    const styles = {
+      ascending:  (state, segs) => adapter.segments.filter(s => s > 0),
+      descending: (state, segs) => adapter.segments.filter(s => s < 0),
+      stepwise:   (state, segs) => adapter.segments.filter(s => Math.abs(s) <= 2),
+      leaping:    (state, segs) => adapter.segments.filter(s => Math.abs(s) >= 4),
+      mixed:      null,
+    };
+    return styles[style] || null;
+  }
+  if (currentAdapter === 'harmony') {
+    return (state, segs) => ['ii','V','vi','IV','iii','V'];
+  }
+  if (currentAdapter === 'rhythm') {
+    const style2 = document.getElementById('sel-style').value;
+    if (style2 === 'stepwise') return (s, segs) => [0.5, 1];
+    if (style2 === 'leaping')  return (s, segs) => [2, 4];
+    return null;
+  }
+  return null;
+}
+
+function generate() {
+  stopPlay();
+  const n = parseInt(document.getElementById('sel-n').value);
+  const adapter = ADAPTERS[currentAdapter];
+  const constraints = getConstraints();
+
+  try {
+    const loop = baruGenerate(adapter, n, constraints);
+    currentLoop = loop;
+    brokenSegs = null;
+    fixedRam = null;
+
+    renderRoll(loop.segments, null, currentAdapter);
+    setStatus(`Perfect loop  —  ${loop.segments.length} segments  state=${loop.state}  ✓`, 'perfect');
+
+    addLog('gen', segString(loop.segments, currentAdapter) +
+      `  <span style="color:var(--green)">→ state=${loop.state}  ✓ perfect</span>`);
+
+    document.getElementById('btn-break').disabled = false;
+    document.getElementById('btn-fix').disabled   = true;
+    document.getElementById('btn-play').disabled  = false;
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'broken');
+  }
+}
+
+function breakLoop() {
+  if (!currentLoop) return;
+  stopPlay();
+
+  const segs = [...currentLoop.segments];
+  // remove 1–3 closing segments from the end
+  const removeCount = Math.min(Math.floor(Math.random() * 3) + 1, segs.length - 2);
+  const broken = segs.slice(0, segs.length - removeCount);
+
+  const loop = baruRun(ADAPTERS[currentAdapter], broken);
+  brokenSegs = broken;
+  fixedRam = null;
+
+  // update currentLoop to point to broken state for play
+  currentLoop = { segments: broken, state: loop.state, perfect: loop.perfect, after: broken };
+
+  renderRoll(broken, null, currentAdapter);
+  setStatus(
+    `Broken — removed ${removeCount} closing segment(s)  state=${loop.state}  ✗`,
+    'broken'
+  );
+
+  addLog('brk',
+    segString(broken, currentAdapter) +
+    `  <span style="color:var(--red)">→ state=${loop.state}  ✗ open</span>`);
+
+  document.getElementById('btn-fix').disabled = false;
+  document.getElementById('btn-play').disabled = false;
+}
+
+function fixLoop() {
+  if (!brokenSegs) return;
+  stopPlay();
+
+  const adapter = ADAPTERS[currentAdapter];
+  const ram = baruCorrect(adapter, brokenSegs);
+  fixedRam = ram;
+
+  const correctionStart = brokenSegs.length;
+  currentLoop = { segments: ram.after, state: 0, perfect: true, after: ram.after };
+
+  renderRoll(ram.after, correctionStart, currentAdapter);
+
+  let methodDesc = ram.method;
+  if (ram.appendCount !== undefined) {
+    methodDesc = `inverse append  (+${ram.appendCount} segment${ram.appendCount !== 1 ? 's' : ''})`;
+  } else if (ram.swapPos !== undefined) {
+    methodDesc = `analytic swap  pos=${ram.swapPos}`;
+  } else if (ram.swaps === 0) {
+    methodDesc = 'already perfect';
+  }
+
+  setStatus(
+    `Fixed by Baru  —  ${ram.swaps} operation(s)  method: ${methodDesc}  ✓`,
+    'fixed'
+  );
+
+  const corrSegs = ram.after.slice(correctionStart);
+  addLog('fix',
+    `+${corrSegs.length > 0 ? segString(corrSegs, currentAdapter) : '(none)'}` +
+    `  <span style="color:var(--orange)">method: ${methodDesc}</span>`);
+
+  addLog('ok',
+    segString(ram.after, currentAdapter) +
+    `  <span style="color:var(--green)">→ state=0  ✓ perfect</span>`);
+
+  document.getElementById('btn-play').disabled = false;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────────────────────────────────────
+
+function initPills() {
+  const pills = {
+    melody:  DIATONIC.map(s => (s > 0 ? '+' : '') + s),
+    harmony: Object.keys(CHORD),
+    rhythm:  DURATIONS,
+  };
+  for (const [name, segs] of Object.entries(pills)) {
+    const el = document.getElementById('pills-' + name);
+    segs.slice(0, 8).forEach(s => {
+      const p = document.createElement('div');
+      p.className = 'seg-pill';
+      p.textContent = s;
+      el.appendChild(p);
+    });
+    if (segs.length > 8) {
+      const p = document.createElement('div');
+      p.className = 'seg-pill';
+      p.textContent = `+${segs.length - 8}`;
+      el.appendChild(p);
+    }
+  }
+}
+
+initPills();
+</script>
+</body>
+</html>
