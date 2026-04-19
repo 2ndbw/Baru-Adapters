@@ -38,6 +38,14 @@ ADAPTERS = [
         "tags": ["core", "toolkit"],
     },
     {
+        "id": "isodata",
+        "name": "ISODATA Classifier Optimizer",
+        "desc": "Real ISODATA clustering on synthetic Landsat 8 pixel samples (5 land cover classes, Nevada mine). Baru sits inside the parameter loop — finds minimum adjustments to reach Kappa ≥ 0.85.",
+        "file": "baru_isodata_classifier.py",
+        "runnable": True,
+        "tags": ["geospatial", "classification", "demo"],
+    },
+    {
         "id": "erdas",
         "name": "ERDAS IMAGINE Pipeline",
         "desc": "Landsat 8 satellite image processing for an open-pit mine site. Baru catches missing atmospheric correction and a duplicate step — 1 change each.",
