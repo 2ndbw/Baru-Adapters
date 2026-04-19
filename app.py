@@ -38,6 +38,14 @@ ADAPTERS = [
         "tags": ["core", "toolkit"],
     },
     {
+        "id": "erdas",
+        "name": "ERDAS IMAGINE Pipeline",
+        "desc": "Landsat 8 satellite image processing for an open-pit mine site. Baru catches missing atmospheric correction and a duplicate step — 1 change each.",
+        "file": "baru_erdas_pipeline.py",
+        "runnable": True,
+        "tags": ["geospatial", "demo"],
+    },
+    {
         "id": "catalog",
         "name": "Catalog OCR Extraction",
         "desc": "Fixes failed OCR scans in a grid-based catalog. Blurry text? Bad crop? Unknown model? Baru picks the right correction move.",
