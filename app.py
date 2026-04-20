@@ -40,7 +40,7 @@ ADAPTERS = [
     {
         "id": "isodata",
         "name": "ISODATA Classifier Optimizer",
-        "desc": "Real ISODATA clustering on synthetic Landsat 8 pixel samples (5 land cover classes, Nevada mine). Baru sits inside the parameter loop — finds minimum adjustments to reach Kappa ≥ 0.85.",
+        "desc": "Real ISODATA on 2,000 synthetic Landsat 8 pixels — 9 bands + NDVI/NDWI/NDBI = 12 features, 5 land cover classes (Nevada mine site). Baru sits inside the parameter loop and finds minimum adjustments to reach publishable Kappa ≥ 0.85.",
         "file": "baru_isodata_classifier.py",
         "runnable": True,
         "tags": ["geospatial", "classification", "demo"],

@@ -1,197 +1,214 @@
 """
-ISODATA Clustering — Python 3 port of PyRadar implementation
-https://github.com/PyRadar/pyradar (original: Python 2, LGPL)
+ISODATA Clustering — N-dimensional (multi-band) Python 3 implementation
+Based on PyRadar (https://github.com/PyRadar/pyradar, LGPL) — ported and
+extended for proper multi-band spectral data.
 
-Ported to Python 3: xrange → range, print statements → functions,
-global state refactored into ISODATAParams class.
-
-Used by baru_isodata_classifier.py.
+Works in full N-dimensional feature space (Euclidean distance).
+Handles 1-D or multi-band (n_samples × n_bands) input.
 """
 
 import numpy as np
-from scipy.spatial.distance import cdist
 
 
 class ISODATAParams:
     def __init__(self, K=5, I=100, P=4, THETA_M=10, THETA_S=1.0,
-                 THETA_C=20.0, THETA_O=0.05, k=None):
+                 THETA_C=0.5, THETA_O=0.01, k=None):
         self.K       = K        # target number of clusters
         self.I       = I        # max iterations
         self.P       = P        # max pairs to merge per iteration
-        self.THETA_M = THETA_M  # min samples per cluster (discard threshold)
+        self.THETA_M = THETA_M  # min samples per cluster (discard)
         self.THETA_S = THETA_S  # std dev threshold for split
         self.THETA_C = THETA_C  # pairwise distance threshold for merge
-        self.THETA_O = THETA_O  # convergence threshold (% change)
+        self.THETA_O = THETA_O  # convergence: max fractional center movement
         self.k       = k if k is not None else K
 
     def copy(self):
-        return ISODATAParams(
-            K=self.K, I=self.I, P=self.P,
-            THETA_M=self.THETA_M, THETA_S=self.THETA_S,
-            THETA_C=self.THETA_C, THETA_O=self.THETA_O, k=self.k
-        )
+        return ISODATAParams(K=self.K, I=self.I, P=self.P,
+                             THETA_M=self.THETA_M, THETA_S=self.THETA_S,
+                             THETA_C=self.THETA_C, THETA_O=self.THETA_O,
+                             k=self.k)
 
     def __repr__(self):
-        return (f"ISODATAParams(K={self.K}, I={self.I}, "
-                f"THETA_M={self.THETA_M}, THETA_S={self.THETA_S}, "
-                f"THETA_C={self.THETA_C})")
+        return (f"ISODATAParams(K={self.K}, I={self.I}, THETA_M={self.THETA_M}, "
+                f"THETA_S={self.THETA_S:.3f}, THETA_C={self.THETA_C:.3f})")
 
 
-def _initial_centers(X_flat, k, method="linspace"):
-    if method == "linspace":
-        return np.linspace(X_flat.min(), X_flat.max(), k)
-    else:
-        idx = np.random.randint(0, X_flat.size, k)
-        return X_flat[idx]
+def _assign(X, centers):
+    """Assign each sample to the nearest center (Euclidean, N-D)."""
+    diffs = X[:, None, :] - centers[None, :, :]       # (n, k, d)
+    dists = np.sqrt((diffs ** 2).sum(axis=2))          # (n, k)
+    return np.argmin(dists, axis=1)                    # (n,)
 
 
-def _assign(X_flat, centers):
-    """Assign each sample to the nearest center. Returns labels array."""
-    dists = np.abs(X_flat[:, None] - centers[None, :])
-    return np.argmin(dists, axis=1)
+def _center_distance(a, b):
+    return float(np.sqrt(((a - b) ** 2).sum()))
 
 
-def _discard(labels, centers, clusters, THETA_M):
-    counts = np.bincount(labels, minlength=centers.size)
-    keep = counts > THETA_M
-    return centers[keep], clusters[keep]
+def _discard(X, labels, centers, THETA_M):
+    """Remove clusters with fewer than THETA_M samples."""
+    counts = np.bincount(labels, minlength=len(centers))
+    keep   = np.where(counts >= THETA_M)[0]
+    if len(keep) == 0:
+        keep = np.array([counts.argmax()])
+    return centers[keep], keep
 
 
-def _update(X_flat, labels, centers, clusters):
-    new_c, new_cl = [], []
-    for i, cl in enumerate(clusters):
-        idx = np.where(labels == i)[0]
-        if idx.size > 0:
-            new_c.append(X_flat[idx].mean())
-            new_cl.append(cl)
-    c = np.array(new_c)
-    cl = np.array(new_cl)
-    order = np.argsort(c)
-    return c[order], cl[order]
+def _update(X, labels, centers, keep_idx):
+    """Recompute center means for surviving clusters. Re-labels to 0..k-1."""
+    new_centers = []
+    new_labels  = np.zeros_like(labels)
+    for new_i, old_i in enumerate(keep_idx):
+        mask = labels == old_i
+        new_labels[mask] = new_i
+        if mask.sum() > 0:
+            new_centers.append(X[mask].mean(axis=0))
+        else:
+            new_centers.append(centers[old_i])
+    return np.array(new_centers), new_labels
 
 
-def _split(X_flat, labels, centers, clusters, K, THETA_M, THETA_S, delta=0.5):
-    if centers.size >= K * 2:
-        return centers, clusters
-    stds = np.array([
-        X_flat[labels == i].std() if (labels == i).sum() > 1 else 0.0
-        for i in range(centers.size)
-    ])
-    counts = np.array([(labels == i).sum() for i in range(centers.size)])
-    i = int(stds.argmax())
-    if stds[i] > THETA_S and counts[i] > 2 * THETA_M:
-        new_c = np.delete(centers, i)
-        new_cl = np.delete(clusters, i)
-        start = int(clusters.max()) + 1
-        new_c = np.append(new_c, [centers[i] + delta, centers[i] - delta])
-        new_cl = np.append(new_cl, [start, start + 1])
-        order = np.argsort(new_c)
-        return new_c[order], new_cl[order]
-    return centers, clusters
+def _std_per_cluster(X, labels, k):
+    """Mean per-band std dev for each cluster."""
+    stds = []
+    for i in range(k):
+        mask = labels == i
+        if mask.sum() > 1:
+            stds.append(X[mask].std(axis=0).mean())
+        else:
+            stds.append(0.0)
+    return np.array(stds)
 
 
-def _merge(labels, centers, clusters, P, THETA_C):
-    k = centers.size
+def _split(X, labels, centers, params):
+    """Split the cluster with highest std dev if above THETA_S."""
+    if centers.shape[0] >= params.K * 2:
+        return centers, labels
+
+    stds   = _std_per_cluster(X, labels, len(centers))
+    counts = np.bincount(labels, minlength=len(centers))
+    i      = int(stds.argmax())
+
+    if stds[i] > params.THETA_S and counts[i] > 2 * params.THETA_M:
+        # Split along the band with highest variance in this cluster
+        mask    = labels == i
+        band_stds = X[mask].std(axis=0)
+        split_dim = int(band_stds.argmax())
+        delta = np.zeros(centers.shape[1])
+        delta[split_dim] = band_stds[split_dim] * 0.5
+
+        c1 = centers[i] + delta
+        c2 = centers[i] - delta
+
+        new_centers = np.delete(centers, i, axis=0)
+        new_centers = np.vstack([new_centers, c1, c2])
+
+        # Re-assign labels
+        new_labels = _assign(X, new_centers)
+        return new_centers, new_labels
+
+    return centers, labels
+
+
+def _merge(labels, centers, params):
+    """Merge cluster pairs whose centers are closer than THETA_C."""
+    k = len(centers)
+    if k <= 1:
+        return centers, labels
+
+    # Compute all pairwise distances
     pairs = []
     for i in range(k):
         for j in range(i + 1, k):
-            d = abs(centers[i] - centers[j])
+            d = _center_distance(centers[i], centers[j])
             pairs.append((d, i, j))
     pairs.sort()
 
-    to_del = set()
-    new_c, new_cl = [], []
-    start = int(clusters.max()) + 1 if clusters.size > 0 else 0
-    merged = 0
+    to_del  = set()
+    new_c   = []
+    merged  = 0
 
-    for d, i, j in pairs[:P]:
-        if d >= THETA_C or i in to_del or j in to_del:
+    for d, i, j in pairs[:params.P]:
+        if d >= params.THETA_C or i in to_del or j in to_del:
             continue
         ci = (labels == i).sum() + 1
         cj = (labels == j).sum()
-        merged_center = round((ci * centers[i] + cj * centers[j]) / (ci + cj))
+        merged_center = (ci * centers[i] + cj * centers[j]) / (ci + cj)
         new_c.append(merged_center)
-        new_cl.append(start + merged)
         to_del |= {i, j}
         merged += 1
 
-    keep = [i for i in range(k) if i not in to_del]
-    final_c = np.array(list(centers[keep]) + new_c)
-    final_cl = np.array(list(clusters[keep]) + new_cl)
-    order = np.argsort(final_c)
-    return final_c[order], final_cl[order]
+    if not new_c:
+        return centers, labels
+
+    keep_idx = [i for i in range(k) if i not in to_del]
+    final_centers = np.vstack(
+        ([centers[i] for i in keep_idx] if keep_idx else []) + new_c
+    )
+    new_labels = _assign(X, final_centers)
+    return final_centers, new_labels
 
 
 def isodata(X, params: ISODATAParams, verbose=False):
     """
-    Run ISODATA clustering on a 1-D or multi-band array X.
+    Run ISODATA clustering on N-dimensional data X.
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples,) or (n_samples, n_bands)
-        Input pixel data. Multi-band input is reduced to a single
-        spectral distance measure (mean across bands) for 1-D ISODATA.
-        For multi-band data, prefer sklearn KMeans directly.
+    X : ndarray, shape (n_samples, n_bands)  or (n_samples,)
     params : ISODATAParams
 
     Returns
     -------
-    labels : ndarray, shape (n_samples,)
-        Cluster assignment for each pixel.
-    centers : ndarray
-        Final cluster centers.
-    n_iter : int
-        Number of iterations completed.
+    labels    : ndarray (n_samples,)  — cluster assignment per pixel
+    centers   : ndarray (k, n_bands) — final cluster centers
+    n_iter    : int                  — iterations completed
     converged : bool
-        Whether the algorithm converged before max iterations.
     """
-    if X.ndim > 1:
-        X_flat = X.mean(axis=1)
-    else:
-        X_flat = X.copy().astype(float)
+    if X.ndim == 1:
+        X = X[:, None]
 
-    k = params.k
-    centers = _initial_centers(X_flat, k)
-    clusters = np.arange(k, dtype=float)
+    n, d = X.shape
+    k    = params.k
 
+    # Initialise centers by spreading evenly across the data range per band
+    idx     = np.linspace(0, n - 1, k, dtype=int)
+    centers = X[idx].copy().astype(float)
+
+    labels    = _assign(X, centers)
     converged = False
-    n_iter = 0
+    n_iter    = 0
 
     for it in range(params.I):
-        n_iter = it + 1
+        n_iter       = it + 1
         last_centers = centers.copy()
 
-        labels = _assign(X_flat, centers)
-        centers, clusters = _discard(labels, centers, clusters, params.THETA_M)
-        if centers.size == 0:
-            break
+        # Discard small clusters
+        centers, keep_idx = _discard(X, labels, centers, params.THETA_M)
+        labels = np.array([np.where(keep_idx == l)[0][0]
+                           if l in keep_idx else 0 for l in labels])
 
-        labels = _assign(X_flat, centers)
-        centers, clusters = _update(X_flat, labels, centers, clusters)
-        k = centers.size
+        # Update centers
+        centers, labels = _update(X, labels, centers, np.arange(len(centers)))
+        k = len(centers)
 
-        if k <= params.K / 2:
-            centers, clusters = _split(X_flat, labels, centers, clusters,
-                                       params.K, params.THETA_M, params.THETA_S)
+        # Split or merge
+        if k <= params.K // 2:
+            centers, labels = _split(X, labels, centers, params)
         elif k > params.K * 2:
-            centers, clusters = _merge(labels, centers, clusters,
-                                       params.P, params.THETA_C)
+            centers, labels = _merge(labels, centers, params)
 
-        k = centers.size
+        k = len(centers)
 
-        # convergence check
+        # Convergence check
         if centers.shape == last_centers.shape:
-            change = np.abs((centers - last_centers) / (last_centers + 1e-9))
-            if np.all(change <= params.THETA_O):
+            movement = np.abs(centers - last_centers) / (np.abs(last_centers) + 1e-9)
+            if movement.max() <= params.THETA_O:
                 converged = True
-                if verbose:
-                    print(f"  Converged at iteration {n_iter}")
                 break
 
-    labels = _assign(X_flat, centers)
+        labels = _assign(X, centers)
 
     if verbose:
-        print(f"  Final clusters: {k}  Iterations: {n_iter}  "
-              f"Converged: {converged}")
+        print(f"  Final clusters: {k}  Iterations: {n_iter}  Converged: {converged}")
 
     return labels, centers, n_iter, converged

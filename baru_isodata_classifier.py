@@ -2,44 +2,42 @@
 BARU DEMO — ISODATA Land Cover Classification Optimizer
 ========================================================
 
-Scenario: An ERDAS IMAGINE analyst is mapping land cover change at a
-Nevada open-pit copper mine using Landsat 8 imagery (NIR / Red / SWIR2
-three-band composite). Five target classes:
+Scenario: Mapping land cover change at a Nevada open-pit copper mine
+using a full Landsat 8 surface-reflectance composite.
 
-    water        — tailings ponds, small reservoirs
-    vegetation   — sparse desert scrub at site perimeter
-    bare_soil    — undisturbed desert floor
-    mine_waste   — waste rock dumps (iron oxides, sulfides)
-    active_pit   — excavated rock faces, wet disturbed ground
+9 spectral bands + 3 derived indices = 12 features per pixel:
 
-ISODATA has 5 parameters. Different combinations produce wildly different
-classification accuracy. Analysts typically tune these by hand — run the
-job, look at the confusion matrix, adjust, run again. That loop can take
-an entire work day on a large scene.
+    B1  Coastal/Aerosol  0.43–0.45 μm   coastal haze, aerosol depth
+    B2  Blue             0.45–0.51 μm   water penetration, soil/veg separation
+    B3  Green            0.53–0.59 μm   vegetation green peak
+    B4  Red              0.64–0.67 μm   chlorophyll absorption, soil contrast
+    B5  NIR              0.85–0.88 μm   biomass, vegetation structure
+    B6  SWIR1            1.57–1.65 μm   soil moisture, mineral discrimination
+    B7  SWIR2            2.11–2.29 μm   iron oxides, sulfides, rock alteration
+    B10 TIRS1 (thermal)  10.6–11.2 μm   land surface temperature
+    B11 TIRS2 (thermal)  11.5–12.5 μm   temperature (validation band)
 
-Baru sits INSIDE that loop. It reads the current accuracy shortfall and
-computes the minimum parameter adjustments to reach publishable Kappa (≥0.85).
+    NDVI  = (B5−B4)/(B5+B4)  vegetation index
+    NDWI  = (B3−B5)/(B3+B5)  water index
+    NDBI  = (B6−B5)/(B6+B5)  built-up / bare rock index
 
-─────────────────────────────────────────────────────────────────────────
+Five land cover classes for the mine site:
+
+    water       — tailings ponds, small reservoirs (dark, absorbs NIR/SWIR)
+    vegetation  — desert scrub at site perimeter (high NIR spike)
+    bare_soil   — undisturbed desert floor (rising SWIR slope)
+    mine_waste  — waste rock dumps (very high SWIR2: iron oxides, pyrite)
+    active_pit  — excavated faces + wet broken rock (dark + warm thermal)
+
 BARU MODEL
-
-    State    = accuracy shortfall: TARGET_KAPPA - current_kappa (×100, int)
-               0 or negative = target reached
-               positive = how many Kappa points you still need
-
-    Segments = discrete ISODATA parameter adjustments, each with a
-               known approximate effect on classification Kappa
-
-    Perfect  = shortfall ≤ 0 (Kappa ≥ 0.85)
-
-    Inverse  = greedy: stack highest-gain adjustments until gap is closed
-
-─────────────────────────────────────────────────────────────────────────
+    State    = Kappa shortfall from publishable threshold (TARGET=85)
+    Segments = discrete ISODATA parameter adjustments
+    Perfect  = shortfall ≤ 0  (Kappa ≥ 85)
+    Inverse  = greedy: highest-gain adjustments until gap closes
 """
 
 import sys, os
 import numpy as np
-from sklearn.cluster import KMeans
 from sklearn.metrics import cohen_kappa_score, accuracy_score, confusion_matrix
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -49,42 +47,62 @@ from isodata import ISODATAParams, isodata
 np.random.seed(42)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SYNTHETIC LANDSAT 8 SCENE — Nevada Mine Site
-# NIR (B5), Red (B4), SWIR2 (B7) — Surface Reflectance values (0.0–1.0)
+# SPECTRAL LIBRARY — Landsat 8 Surface Reflectance (0.0–1.0)
+# Columns: B1  B2   B3   B4   B5   B6   B7   B10  B11
+# Thermal bands normalized: (T_K − 270) / 60
 # ─────────────────────────────────────────────────────────────────────────────
 
-CLASSES = ['water', 'vegetation', 'bare_soil', 'mine_waste', 'active_pit']
+BAND_NAMES = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B10', 'B11']
+CLASSES    = ['water', 'vegetation', 'bare_soil', 'mine_waste', 'active_pit']
 
-# Mean spectral signature per class [NIR, Red, SWIR2]
 SIGNATURES = np.array([
-    [0.04, 0.03, 0.02],   # water:       absorbs NIR + SWIR almost completely
-    [0.48, 0.07, 0.10],   # vegetation:  high NIR (cell structure), low Red (chlorophyll)
-    [0.28, 0.24, 0.32],   # bare_soil:   moderate, gradually increasing toward SWIR
-    [0.18, 0.15, 0.38],   # mine_waste:  elevated SWIR (iron oxides, pyrite, sulfides)
-    [0.12, 0.09, 0.07],   # active_pit:  dark — wet broken rock, shadow in pit walls
+    #  B1     B2     B3     B4     B5     B6     B7    B10   B11
+    [0.055, 0.052, 0.054, 0.028, 0.038, 0.018, 0.010, 0.33, 0.30],  # water
+    [0.042, 0.048, 0.072, 0.050, 0.485, 0.178, 0.098, 0.42, 0.40],  # vegetation
+    [0.101, 0.118, 0.182, 0.248, 0.302, 0.352, 0.318, 0.63, 0.61],  # bare_soil
+    [0.082, 0.096, 0.140, 0.180, 0.198, 0.295, 0.402, 0.67, 0.65],  # mine_waste
+    [0.062, 0.072, 0.092, 0.098, 0.118, 0.118, 0.095, 0.58, 0.56],  # active_pit
 ])
 
-N_PER_CLASS = 300   # 1,500 total pixels (representative sample from a large scene)
-NOISE_SD    = 0.025  # realistic spectral variability within each class
+# Per-band noise (realistic inter-class spectral variability)
+NOISE = np.array([0.008, 0.008, 0.010, 0.012, 0.025, 0.022, 0.020, 0.020, 0.020])
 
-X = np.vstack([
-    np.clip(SIGNATURES[i] + np.random.randn(N_PER_CLASS, 3) * NOISE_SD, 0, 1)
-    for i in range(len(CLASSES))
-])
-y_true = np.repeat(np.arange(len(CLASSES)), N_PER_CLASS)
+N_PER_CLASS = 400   # 2,000 total pixels
 
-TARGET_KAPPA = 85   # Kappa × 100 — minimum for publishable classification
+def add_indices(X_bands):
+    """Compute NDVI, NDWI, NDBI and append as additional features."""
+    B3  = X_bands[:, 2]
+    B4  = X_bands[:, 3]
+    B5  = X_bands[:, 4]
+    B6  = X_bands[:, 5]
+    eps = 1e-9
+    NDVI = (B5 - B4) / (B5 + B4 + eps)
+    NDWI = (B3 - B5) / (B3 + B5 + eps)
+    NDBI = (B6 - B5) / (B6 + B5 + eps)
+    return np.column_stack([X_bands, NDVI, NDWI, NDBI])
+
+def generate_scene():
+    X_bands, y = [], []
+    for cls_id, sig in enumerate(SIGNATURES):
+        samples = sig + np.random.randn(N_PER_CLASS, 9) * NOISE
+        X_bands.append(np.clip(samples, 0, 1))
+        y.extend([cls_id] * N_PER_CLASS)
+    return add_indices(np.vstack(X_bands)), np.array(y)
+
+X, y_true = generate_scene()
+FEATURE_NAMES = BAND_NAMES + ['NDVI', 'NDWI', 'NDBI']
+
+print(f"  Scene: {X.shape[0]} pixels × {X.shape[1]} features "
+      f"({len(BAND_NAMES)} bands + 3 indices)")
+
+TARGET_KAPPA = 85
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ISODATA RUNNER — wraps isodata.py, maps clusters → true classes, scores
+# RUNNER — ISODATA on full 12-feature spectral space
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_and_score(params: ISODATAParams, verbose=False):
-    """
-    Run ISODATA with the given parameters and return classification scores.
-    Cluster-to-class mapping uses majority vote per cluster.
-    """
     labels, centers, n_iter, converged = isodata(X, params, verbose=False)
 
     n_clusters = int(labels.max()) + 1
@@ -94,11 +112,10 @@ def run_and_score(params: ISODATAParams, verbose=False):
         if mask.sum() > 0:
             mapping[c] = int(np.bincount(y_true[mask], minlength=len(CLASSES)).argmax())
 
-    y_pred = np.array([mapping.get(int(l), 0) for l in labels])
-
-    overall_acc = accuracy_score(y_true, y_pred) * 100
-    kappa       = cohen_kappa_score(y_true, y_pred) * 100
-    cm          = confusion_matrix(y_true, y_pred, labels=list(range(len(CLASSES))))
+    y_pred       = np.array([mapping.get(int(l), 0) for l in labels])
+    overall_acc  = accuracy_score(y_true, y_pred) * 100
+    kappa        = cohen_kappa_score(y_true, y_pred) * 100
+    cm           = confusion_matrix(y_true, y_pred, labels=list(range(len(CLASSES))))
 
     if verbose:
         print(f"  Clusters found: {n_clusters}  Iterations: {n_iter}  "
@@ -108,52 +125,51 @@ def run_and_score(params: ISODATAParams, verbose=False):
     return overall_acc, kappa, cm, n_clusters, converged
 
 
+def print_confusion(cm):
+    header = f"  {'':14}" + "".join(f"{c[:6]:>9}" for c in CLASSES)
+    print(header)
+    for i, row in enumerate(cm):
+        print(f"  {CLASSES[i]:<14}" + "".join(f"{int(v):>9}" for v in row))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # BARU DOMAIN — ISODATA PARAMETER ADJUSTMENTS
 # ─────────────────────────────────────────────────────────────────────────────
-# Each segment is one parameter adjustment an analyst can make.
-# Effect = approximate change in Kappa (×100) for this dataset.
-# Calibrated by running the classifier with each adjustment applied to
-# the baseline "bad" parameters and measuring the Kappa delta.
 
 ADJUSTMENTS = {
-    # ── Target cluster count (K) ──────────────────────────────────────────
-    'K_raise_5':       +12,   # K += 5: more target clusters → better separation
-    'K_raise_2':       + 5,   # K += 2: modest increase
-    'K_lower_2':       - 7,   # K -= 2: too few classes → confusion rises
-    'K_lower_5':       -15,   # K -= 5: severe under-clustering
+    # Target cluster count
+    'K_raise_5':       +14,
+    'K_raise_2':       + 6,
+    'K_lower_2':       - 8,
+    'K_lower_5':       -18,
 
-    # ── Split threshold THETA_S ───────────────────────────────────────────
-    'split_loosen':    + 6,   # lower THETA_S: split more aggressively → finer map
-    'split_tighten':   - 4,   # raise THETA_S: fewer splits → coarser map
+    # Split threshold THETA_S (lower = more splitting = more classes)
+    'split_loosen':    + 8,   # lower THETA_S: splits happen more easily
+    'split_tighten':   - 5,   # raise THETA_S: fewer splits
 
-    # ── Merge threshold THETA_C ───────────────────────────────────────────
-    'merge_tighten':   + 8,   # raise THETA_C: less merging → preserve classes
-    'merge_loosen':    -10,   # lower THETA_C: aggressive merging → class collapse
+    # Merge distance THETA_C (higher = less merging = preserve classes)
+    'merge_tighten':   +10,   # raise THETA_C: stop merging similar classes
+    'merge_loosen':    -12,   # lower THETA_C: aggressive merging → class collapse
 
-    # ── Min pixels per cluster THETA_M ────────────────────────────────────
-    'minpix_lower':    + 4,   # keep smaller clusters → more rare-class coverage
-    'minpix_raise':    - 3,   # discard more clusters → lose rare classes
+    # Min cluster size THETA_M
+    'minpix_lower':    + 5,   # keep small clusters → rare classes survive
+    'minpix_raise':    - 4,   # discard small clusters → rare classes lost
 
-    # ── Iteration count ───────────────────────────────────────────────────
-    'iter_more':       + 3,   # more iterations → better convergence
-    'iter_fewer':      - 2,   # fewer iterations → premature stop
+    # Iterations
+    'iter_more':       + 4,
+    'iter_fewer':      - 3,
 }
 
 ADJ_NAMES = list(ADJUSTMENTS.keys())
 
 
 def baru_inverse(shortfall):
-    """
-    Given a Kappa shortfall, return the minimum parameter adjustments
-    to close the gap. Greedy: largest positive gain first.
-    """
     if shortfall <= 0:
         return []
     result    = []
     remaining = shortfall
     pool = sorted(
-        [(name, g) for name, g in ADJUSTMENTS.items() if g > 0],
+        [(n, g) for n, g in ADJUSTMENTS.items() if g > 0],
         key=lambda x: x[1], reverse=True
     )
     while remaining > 0:
@@ -169,7 +185,6 @@ def baru_inverse(shortfall):
 
 
 def make_optimizer(initial_kappa):
-    """Create a Baru instance starting from a measured Kappa score."""
     return Baru(
         segments = ADJ_NAMES,
         compose  = lambda kappa, adj: kappa + ADJUSTMENTS[adj],
@@ -180,96 +195,79 @@ def make_optimizer(initial_kappa):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 1: Baseline — bad parameters, poor classification
-# ─────────────────────────────────────────────────────────────────────────────
-# Analyst uses defaults without tuning. K=2 is far too coarse for 5 classes.
-# The algorithm converges fast but collapses everything into 2 clusters.
-
-bad_params = ISODATAParams(K=2, I=15, THETA_M=200, THETA_S=3.0,
-                           THETA_C=50.0, k=2)
-
-print("─" * 66)
-print("ISODATA — BAD PARAMETERS (analyst used defaults without tuning)")
-print("─" * 66)
-acc_bad, kappa_bad, cm_bad, k_bad, conv_bad = run_and_score(bad_params, verbose=True)
-print()
-print("  Confusion matrix (rows=true, cols=predicted):")
-print(f"  Classes: {CLASSES}")
-for i, row in enumerate(cm_bad):
-    print(f"  {CLASSES[i]:<14} {[int(v) for v in row]}")
-print(f"\n  Shortfall from target Kappa 85: {TARGET_KAPPA - kappa_bad:.1f} points")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# STEP 2: Good parameters — publishable classification
+# STEP 1: Bad parameters — analyst used defaults on 12-band data
 # ─────────────────────────────────────────────────────────────────────────────
 
-good_params = ISODATAParams(K=5, I=100, THETA_M=30, THETA_S=0.8,
-                            THETA_C=8.0, k=5)
+bad_params = ISODATAParams(K=2, I=10, THETA_M=400, THETA_S=5.0, THETA_C=0.02, k=2)
 
 print()
-print("─" * 66)
-print("ISODATA — GOOD PARAMETERS (senior analyst, tuned)")
-print("─" * 66)
-acc_good, kappa_good, cm_good, k_good, conv_good = run_and_score(good_params, verbose=True)
+print("─" * 68)
+print("ISODATA — BAD PARAMETERS  (K=2, 10 iterations, high discard threshold)")
+print("─" * 68)
+acc_bad, kappa_bad, cm_bad, k_bad, _ = run_and_score(bad_params, verbose=True)
 print()
-print("  Confusion matrix (rows=true, cols=predicted):")
-for i, row in enumerate(cm_good):
-    print(f"  {CLASSES[i]:<14} {[int(v) for v in row]}")
-print(f"\n  Shortfall from target Kappa 85: {TARGET_KAPPA - kappa_good:.1f} points")
-
+print_confusion(cm_bad)
+print(f"\n  Shortfall from Kappa 85: {TARGET_KAPPA - kappa_bad:.1f} points")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 3: Junior analyst submits a parameter adjustment sequence
-#         Some moves help, some hurt. Net result: still below target Kappa.
+# STEP 2: Good parameters — properly tuned for 12 features / 5 classes
 # ─────────────────────────────────────────────────────────────────────────────
 
-shortfall = round(TARGET_KAPPA - kappa_bad)
-optimizer  = make_optimizer(round(kappa_bad))
+good_params = ISODATAParams(K=5, I=100, THETA_M=40, THETA_S=0.04, THETA_C=0.35, k=7)
 
-# The analyst tries a sequence of adjustments — some good, some bad
-junior_adjustments = [
-    'K_raise_2',       # good: more clusters helps
-    'iter_more',       # good: better convergence
-    'merge_loosen',    # bad: aggressive merging destroys the mine_waste class
-    'minpix_raise',    # bad: discards the rare active_pit cluster
-    'split_tighten',   # bad: reduces splitting, coarsens the map
+print()
+print("─" * 68)
+print("ISODATA — GOOD PARAMETERS  (K=5, 100 iterations, tuned thresholds)")
+print("─" * 68)
+acc_good, kappa_good, cm_good, k_good, _ = run_and_score(good_params, verbose=True)
+print()
+print_confusion(cm_good)
+print(f"\n  Shortfall from Kappa 85: {TARGET_KAPPA - kappa_good:.1f} points")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3: Junior analyst — bad adjustment sequence
+# ─────────────────────────────────────────────────────────────────────────────
+
+optimizer = make_optimizer(round(kappa_bad))
+
+junior_seq = [
+    'K_raise_2',       # small K increase — not enough
+    'iter_more',       # more iterations — helps a little
+    'merge_loosen',    # WRONG: aggressive merging destroys mine_waste class
+    'minpix_raise',    # WRONG: discards the rare active_pit cluster
+    'split_tighten',   # WRONG: reduces splits, map becomes coarser
 ]
 
-result = optimizer.run(junior_adjustments)
+result_jr = optimizer.run(junior_seq)
 
 print()
-print("─" * 66)
-print("JUNIOR ANALYST — PARAMETER ADJUSTMENT SEQUENCE")
-print("─" * 66)
+print("─" * 68)
+print("JUNIOR ANALYST — ADJUSTMENT SEQUENCE ON 12-BAND DATA")
+print("─" * 68)
 print(f"  Starting Kappa: {round(kappa_bad)}")
-print(f"  Adjustments:    {junior_adjustments}")
-print(f"  Final Kappa:    {result.state}")
-print(f"  Publishable:    {result.perfect}")
 print()
-print("  Walk-through:")
 running = round(kappa_bad)
-for adj in junior_adjustments:
+for adj in junior_seq:
     effect = ADJUSTMENTS[adj]
     running += effect
     sign = '+' if effect >= 0 else ''
-    print(f"    {adj:<22} {sign}{effect:3d}  →  Kappa {running}")
-print(f"\n  Still {TARGET_KAPPA - result.state} Kappa points below publishable threshold.")
-
+    tag = '  ✓' if effect > 0 else '  ✗ HURTS'
+    print(f"  {adj:<22} {sign}{effect:3d}  →  Kappa {running:3d}{tag}")
+print(f"\n  Final Kappa: {result_jr.state}   Publishable: {result_jr.perfect}")
+print(f"  Still {TARGET_KAPPA - result_jr.state} Kappa points below threshold.")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 4: Baru finds the minimum correction to the junior's sequence
+# STEP 4: Baru correction
 # ─────────────────────────────────────────────────────────────────────────────
 
-fix = optimizer.correct(junior_adjustments)
+fix = optimizer.correct(junior_seq)
 
 print()
-print("─" * 66)
-print("BARU CORRECTION — MINIMUM CHANGES TO THE ANALYST'S SEQUENCE")
-print("─" * 66)
-print(f"  Before: {fix.before}")
-print(f"  After:  {fix.after}")
-print(f"  Changes: {fix.swaps}  [{fix.method}]")
+print("─" * 68)
+print("BARU CORRECTION — MINIMUM CHANGES TO REACH KAPPA 85")
+print("─" * 68)
+print(f"  Changes: {fix.swaps}   Method: {fix.method}")
+print()
 
 changes = [(i, fix.before[i], fix.after[i])
            for i in range(min(len(fix.before), len(fix.after)))
@@ -278,39 +276,51 @@ if len(fix.after) > len(fix.before):
     for i in range(len(fix.before), len(fix.after)):
         changes.append((i, '—', fix.after[i]))
 
-if changes:
-    print()
-    for pos, old, new in changes:
-        old_eff = ADJUSTMENTS.get(old, 0)
-        new_eff = ADJUSTMENTS.get(new, 0)
-        swing = new_eff - old_eff
-        print(f"  Step {pos+1}: '{old}' ({old_eff:+d} Kappa)  →  "
-              f"'{new}' ({new_eff:+d} Kappa)  [{swing:+d} swing]")
+for pos, old, new in changes:
+    old_eff = ADJUSTMENTS.get(old, 0)
+    new_eff = ADJUSTMENTS.get(new, 0)
+    swing   = new_eff - old_eff
+    print(f"  Step {pos+1}: '{old}' ({old_eff:+d})  →  '{new}' ({new_eff:+d})  "
+          f"[{swing:+d} Kappa swing]")
 
 verify = optimizer.run(fix.after)
-print(f"\n  Final Kappa after fix: {verify.state}")
-print(f"  Publishable: {verify.perfect}")
-
+print(f"\n  Final Kappa: {verify.state}   Publishable: {verify.perfect}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 5: Baru generates an optimal adjustment sequence from scratch
+# STEP 5: Feature importance — which bands separate the classes best?
+# ─────────────────────────────────────────────────────────────────────────────
+
+print()
+print("─" * 68)
+print("SPECTRAL SEPARABILITY — band-by-band class contrast")
+print("─" * 68)
+print(f"  {'Feature':<8}  " +
+      "  ".join(f"{c[:5]:>7}" for c in CLASSES))
+
+# For each feature, show mean value per class
+for fi, fname in enumerate(FEATURE_NAMES):
+    vals = [X[y_true == ci, fi].mean() for ci in range(len(CLASSES))]
+    spread = max(vals) - min(vals)
+    bar = "█" * int(spread * 40)
+    row = f"  {fname:<8}  " + "  ".join(f"{v:7.3f}" for v in vals)
+    print(row + f"   spread={spread:.3f} {bar}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6: Generate optimal adjustment sequence
 # ─────────────────────────────────────────────────────────────────────────────
 
 generated = optimizer.generate(6)
 
 print()
-print("─" * 66)
-print("BARU-GENERATED OPTIMAL ADJUSTMENT SEQUENCE")
-print("─" * 66)
+print("─" * 68)
+print("BARU-GENERATED OPTIMAL PARAMETER SEQUENCE")
+print("─" * 68)
 print(f"  Starting Kappa: {round(kappa_bad)}")
-
 running = round(kappa_bad)
 for adj in generated.segments:
     effect = ADJUSTMENTS[adj]
     running += effect
     sign = '+' if effect >= 0 else ''
-    print(f"  {adj:<22} {sign}{effect:3d}  →  Kappa {running}")
-
-print(f"\n  Final Kappa: {generated.state}")
-print(f"  Publishable: {generated.perfect}")
-print("─" * 66)
+    print(f"  {adj:<22} {sign}{effect:3d}  →  Kappa {running:3d}")
+print(f"\n  Final Kappa: {generated.state}   Publishable: {generated.perfect}")
+print("─" * 68)
