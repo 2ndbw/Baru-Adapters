@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Land Use Classifier</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: #0d0d0d; color: #e0e0e0; min-height: 100vh;
+           display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    header { background: #111; border-bottom: 1px solid #222;
+             padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+             flex-shrink: 0; }
+    header h1 { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    header .sub { color: #444; font-size: 0.8rem; }
+    header a { color: #444; font-size: 0.78rem; text-decoration: none; margin-left: auto; }
+    header a:hover { color: #aaa; }
+
+    .layout { display: grid; grid-template-columns: 1fr 1fr; flex: 1; overflow: hidden; }
+
+    /* ── LEFT PANEL ── */
+    .left { display: flex; flex-direction: column; border-right: 1px solid #1a1a1a; overflow: hidden; }
+
+    /* Class panel */
+    .class-panel {
+      background: #0e0e0e; border-bottom: 1px solid #1a1a1a;
+      flex-shrink: 0;
+    }
+    .class-panel-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-bottom: 1px solid #161616;
+    }
+    #class-search {
+      flex: 1; background: #1a1a1a; border: 1px solid #252525;
+      border-radius: 5px; padding: 5px 10px; color: #ccc;
+      font-size: 0.78rem; outline: none;
+    }
+    #class-search:focus { border-color: #333; }
+    #class-search::placeholder { color: #444; }
+
+    .group-tabs { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 12px;
+                  border-bottom: 1px solid #161616; }
+    .gtab { padding: 2px 9px; border-radius: 10px; font-size: 0.7rem; font-weight: 600;
+            cursor: pointer; border: 1px solid #222; background: transparent;
+            color: #555; transition: all 0.12s; white-space: nowrap; }
+    .gtab.active { background: #1e1e1e; color: #ccc; border-color: #333; }
+
+    .class-list {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 2px; padding: 6px 8px;
+      max-height: 200px; overflow-y: auto;
+    }
+    .class-list::-webkit-scrollbar { width: 4px; }
+    .class-list::-webkit-scrollbar-track { background: #0d0d0d; }
+    .class-list::-webkit-scrollbar-thumb { background: #252525; border-radius: 2px; }
+
+    .class-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 8px; border-radius: 5px; border: 1px solid transparent;
+      font-size: 0.73rem; cursor: pointer;
+      background: #141414; color: #999;
+      transition: border-color 0.1s, background 0.1s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .class-btn .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .class-btn.active { border-color: #555; color: #fff; background: #1e1e1e; }
+    .class-btn:hover { background: #1a1a1a; color: #ccc; }
+    .class-btn .cnt { font-size: 0.66rem; color: #4d9; margin-left: auto; flex-shrink: 0;
+                      display: none; }
+    .class-btn.has-pts .cnt { display: inline; }
+    .class-btn.hidden { display: none; }
+
+    /* Toolbar */
+    .toolbar { background: #111; border-bottom: 1px solid #1a1a1a;
+               padding: 8px 14px; display: flex; align-items: center;
+               gap: 10px; flex-shrink: 0; flex-wrap: wrap; }
+    .tool-label { font-size: 0.7rem; color: #555; text-transform: uppercase;
+                  letter-spacing: 0.05em; }
+    .divider { width: 1px; height: 22px; background: #222; }
+    .brush-wrap { display: flex; align-items: center; gap: 6px; }
+    input[type=range] { width: 70px; accent-color: #4d9; }
+    #brush-label { font-size: 0.78rem; color: #4d9; min-width: 18px; }
+
+    .btn-sm {
+      padding: 4px 11px; border-radius: 5px; border: 1px solid #2a2a2a;
+      font-size: 0.75rem; font-weight: 600; cursor: pointer;
+      background: #161616; color: #777; transition: background 0.12s;
+    }
+    .btn-sm:hover { background: #1e1e1e; color: #bbb; }
+    .btn-sm.danger { border-color: #2a1a1a; color: #a55; }
+    .btn-sm.danger:hover { background: #1a0f0f; color: #f77; }
+
+    .btn-primary {
+      padding: 6px 18px; border-radius: 6px;
+      background: #1a472a; color: #5c5; border: 1px solid #2a5a2a;
+      font-size: 0.82rem; font-weight: 700; cursor: pointer;
+    }
+    .btn-primary:hover { background: #1f5a30; }
+    .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-baru {
+      padding: 6px 16px; border-radius: 6px;
+      background: #1a0a2a; color: #b8a0f0; border: 1px solid #2a1a3a;
+      font-size: 0.78rem; font-weight: 700; cursor: pointer;
+    }
+    .btn-baru:hover { background: #220e36; }
+    .btn-baru:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* Active class indicator */
+    #active-indicator {
+      display: flex; align-items: center; gap: 6px;
+      padding: 3px 8px; border-radius: 5px; background: #1a1a1a;
+      font-size: 0.75rem; color: #aaa; white-space: nowrap;
+    }
+    #active-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    /* Canvas */
+    .canvas-wrap {
+      flex: 1; position: relative; overflow: hidden;
+      background: #080808; display: flex; align-items: center; justify-content: center;
+      min-height: 0;
+    }
+    #upload-prompt { text-align: center; color: #2a2a2a; pointer-events: none; }
+    #upload-prompt p { margin-top: 8px; font-size: 0.85rem; }
+    #upload-icon { font-size: 2.5rem; }
+
+    #canvas-container { position: relative; display: none; cursor: crosshair; }
+    #base-img { display: block; max-width: 100%; max-height: 100%; }
+    #paint-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+    .canvas-status { position: absolute; bottom: 8px; right: 10px;
+                     font-size: 0.7rem; color: #333; pointer-events: none; }
+
+    .canvas-wrap.drag-over::after {
+      content: "Drop aerial photo here";
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; color: #5c5; font-size: 1.1rem; font-weight: 600;
+      border: 2px dashed #2a5a2a; border-radius: 4px; pointer-events: none;
+    }
+    #file-input { display: none; }
+
+    /* Action bar */
+    .action-bar { background: #0e0e0e; border-top: 1px solid #1a1a1a;
+                  padding: 8px 14px; display: flex; align-items: center;
+                  gap: 10px; flex-shrink: 0; }
+    .trained-count { font-size: 0.72rem; color: #555; }
+    .trained-count strong { color: #4d9; }
+
+    /* ── RIGHT PANEL ── */
+    .right { display: flex; flex-direction: column; background: #090909; overflow: hidden; }
+
+    .right-header { background: #111; border-bottom: 1px solid #1a1a1a;
+                    padding: 8px 16px; display: flex; align-items: center;
+                    gap: 10px; flex-shrink: 0; }
+    .right-header h2 { font-size: 0.78rem; font-weight: 600; color: #666;
+                       text-transform: uppercase; letter-spacing: 0.05em; }
+    .tab-btn { padding: 3px 11px; border-radius: 5px; border: 1px solid #1e1e1e;
+               background: transparent; color: #555; font-size: 0.75rem;
+               cursor: pointer; transition: all 0.12s; }
+    .tab-btn.active { background: #1a1a1a; color: #ccc; border-color: #2a2a2a; }
+
+    .right-body { flex: 1; overflow-y: auto; padding: 14px; min-height: 0; }
+    .right-body::-webkit-scrollbar { width: 4px; }
+    .right-body::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+
+    #map-panel { display: none; }
+    #map-img { width: 100%; border-radius: 5px; image-rendering: pixelated; display: block; }
+
+    .legend { margin-top: 12px; }
+    .legend-title { font-size: 0.68rem; color: #555; text-transform: uppercase;
+                    letter-spacing: 0.05em; margin-bottom: 8px; }
+    .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .legend-item { display: flex; align-items: center; gap: 7px; font-size: 0.78rem; }
+    .swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    .legend-lbl { color: #bbb; }
+
+    /* Baru */
+    #baru-panel { display: none; }
+    .baru-state-bar { background: #111; border: 1px solid #1e1e1e; border-radius: 7px;
+                      padding: 12px 14px; margin-bottom: 12px; }
+    .baru-state-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .state-label { font-size: 0.68rem; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+    .state-val { font-size: 1.3rem; font-weight: 700; }
+    .state-val.perfect { color: #5c5; }
+    .state-val.warn { color: #fa0; }
+    .state-val.bad { color: #f55; }
+    .state-desc { font-size: 0.78rem; color: #666; }
+    .progress-bar { height: 4px; background: #1a1a1a; border-radius: 2px; margin-top: 6px; }
+    .progress-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
+
+    .sep-section-title { font-size: 0.68rem; color: #555; text-transform: uppercase;
+                         letter-spacing: 0.05em; margin-bottom: 6px; }
+    .sep-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-bottom: 12px; }
+    .sep-table th { padding: 4px 7px; text-align: left; color: #444;
+                    font-size: 0.68rem; text-transform: uppercase;
+                    letter-spacing: 0.04em; border-bottom: 1px solid #181818; }
+    .sep-table td { padding: 5px 7px; border-bottom: 1px solid #141414; }
+    .sep-table tr.confused td { color: #fa0; }
+    .sep-table tr.good td { color: #4d9; }
+    .jm-bar-wrap { display: flex; align-items: center; gap: 5px; }
+    .jm-bar { height: 5px; border-radius: 2px; flex-shrink: 0; }
+
+    .baru-rec { background: #0d0d1a; border: 1px solid #18182a; border-radius: 7px;
+                padding: 10px 12px; margin-bottom: 10px; }
+    .baru-rec-title { font-size: 0.68rem; color: #6a6af0; text-transform: uppercase;
+                      letter-spacing: 0.05em; margin-bottom: 6px; }
+    .baru-step { font-size: 0.78rem; color: #888; padding: 2px 0; }
+    .baru-step span { color: #b8a0f0; font-weight: 600; }
+
+    .fix-result { background: #0a150a; border: 1px solid #182018; border-radius: 7px;
+                  padding: 10px 12px; margin-top: 10px; font-size: 0.78rem;
+                  color: #7a9; display: none; }
+
+    .empty-state { text-align: center; padding: 50px 20px; color: #2a2a2a; }
+    .empty-state p { margin-top: 8px; font-size: 0.82rem; }
+
+    .spinner { display: inline-block; width: 11px; height: 11px;
+               border: 2px solid #333; border-top-color: #5c5;
+               border-radius: 50%; animation: spin 0.6s linear infinite;
+               margin-right: 5px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Land Use Classifier</h1>
+  <span class="sub">100-class aerial interpretation · Baru separability analysis</span>
+  <a href="/">← Baru Adapters</a>
+</header>
+
+<div class="layout">
+
+  <!-- ── LEFT: IMAGE + PAINTING ── -->
+  <div class="left">
+
+    <!-- Class selector panel -->
+    <div class="class-panel">
+      <div class="class-panel-head">
+        <input type="text" id="class-search" placeholder="Search classes…" oninput="filterClasses()">
+        <div id="active-indicator">
+          <div id="active-dot"></div>
+          <span id="active-label">Select a class</span>
+        </div>
+      </div>
+      <div class="group-tabs" id="group-tabs"></div>
+      <div class="class-list" id="class-list"></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <span class="tool-label">Brush</span>
+      <div class="brush-wrap">
+        <input type="range" id="brush-slider" min="2" max="30" value="10"
+               oninput="brushSize=+this.value; document.getElementById('brush-label').textContent=this.value">
+        <span id="brush-label">10</span>
+      </div>
+      <div class="divider"></div>
+      <button class="btn-sm" onclick="clearClass()">Clear class</button>
+      <button class="btn-sm danger" onclick="clearAll()">Clear all</button>
+      <div class="divider"></div>
+      <button class="btn-sm" onclick="document.getElementById('file-input').click()">Load image</button>
+      <input type="file" id="file-input" accept="image/*">
+    </div>
+
+    <!-- Canvas -->
+    <div class="canvas-wrap" id="drop-zone">
+      <div id="upload-prompt">
+        <div id="upload-icon">🛰</div>
+        <strong style="color:#333">Drop an aerial photo here</strong>
+        <p style="color:#222">or click "Load image" above</p>
+      </div>
+      <div id="canvas-container">
+        <img id="base-img" src="" alt="">
+        <canvas id="paint-canvas"></canvas>
+      </div>
+      <div class="canvas-status" id="canvas-status"></div>
+    </div>
+
+    <!-- Action bar -->
+    <div class="action-bar">
+      <div class="trained-count" id="trained-count">No training data yet</div>
+      <div style="margin-left:auto; display:flex; gap:8px;">
+        <button class="btn-baru" id="fix-btn" onclick="baruFix()" disabled>⚡ Baru Fix</button>
+        <button class="btn-primary" id="classify-btn" onclick="classify()" disabled>Classify</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT: MAP + BARU ── -->
+  <div class="right">
+    <div class="right-header">
+      <h2>Output</h2>
+      <button class="tab-btn active" id="tab-map"  onclick="showTab('map')">Map</button>
+      <button class="tab-btn"        id="tab-baru" onclick="showTab('baru')">
+        Baru Analysis
+        <span id="baru-badge" style="display:none; margin-left:3px; color:#fa0">●</span>
+      </button>
+    </div>
+    <div class="right-body">
+
+      <div id="map-panel">
+        <img id="map-img" src="" alt="Land use map">
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div id="baru-panel">
+        <div class="baru-state-bar">
+          <div class="baru-state-row">
+            <span class="state-label">Baru State</span>
+            <span class="state-val" id="state-val">—</span>
+            <span class="state-desc" id="state-desc"></span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+
+        <div class="sep-section-title">Class Separability (JM Distance · target ≥ 1.50)</div>
+        <table class="sep-table" id="sep-table">
+          <thead><tr><th>Class A</th><th>Class B</th><th>JM</th><th>Status</th></tr></thead>
+          <tbody id="sep-tbody"></tbody>
+        </table>
+
+        <div class="baru-rec" id="baru-rec" style="display:none">
+          <div class="baru-rec-title">Baru — minimum changes to reach target</div>
+          <div id="baru-steps"></div>
+        </div>
+
+        <div class="fix-result" id="fix-result"></div>
+      </div>
+
+      <div class="empty-state" id="empty-state">
+        <div style="font-size:2.2rem; opacity:0.15">🗺</div>
+        <p>Paint training areas, then click Classify</p>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── 100-class palette ────────────────────────────────────────────────────────
+
+const CLASSES = [
+  // WATER (0–9)
+  {label:"Deep water / lake",          hex:"#1a6fa8", group:"Water"},
+  {label:"Shallow / nearshore water",  hex:"#5dade2", group:"Water"},
+  {label:"River / stream",             hex:"#2e86c1", group:"Water"},
+  {label:"Reservoir / dam",            hex:"#1f618d", group:"Water"},
+  {label:"Pond / small water body",    hex:"#85c1e9", group:"Water"},
+  {label:"Wetland / marsh water",      hex:"#48c9b0", group:"Water"},
+  {label:"Flooded field",              hex:"#76d7c4", group:"Water"},
+  {label:"Tidal flat / mudflat",       hex:"#7fb3d3", group:"Water"},
+  {label:"Irrigation canal / ditch",   hex:"#a9cce3", group:"Water"},
+  {label:"Swimming pool / artificial", hex:"#aed6f1", group:"Water"},
+  // NATURAL VEG (10–24)
+  {label:"Dense deciduous forest",     hex:"#1e8449", group:"Natural Veg"},
+  {label:"Dense coniferous forest",    hex:"#145a32", group:"Natural Veg"},
+  {label:"Mixed forest",               hex:"#27ae60", group:"Natural Veg"},
+  {label:"Open woodland / savanna",    hex:"#52be80", group:"Natural Veg"},
+  {label:"Shrubland / chaparral",      hex:"#58d68d", group:"Natural Veg"},
+  {label:"Grassland / prairie",        hex:"#a9dfbf", group:"Natural Veg"},
+  {label:"Dry scrub / desert shrub",   hex:"#82b450", group:"Natural Veg"},
+  {label:"Riparian vegetation",        hex:"#0e6655", group:"Natural Veg"},
+  {label:"Mangrove",                   hex:"#117a65", group:"Natural Veg"},
+  {label:"Peatland / bog",             hex:"#1abc9c", group:"Natural Veg"},
+  {label:"Alpine meadow",              hex:"#76b041", group:"Natural Veg"},
+  {label:"Tundra / Arctic heath",      hex:"#9dcc65", group:"Natural Veg"},
+  {label:"Emergent wetland veg",       hex:"#00b464", group:"Natural Veg"},
+  {label:"Seagrass / aquatic veg",     hex:"#00b894", group:"Natural Veg"},
+  {label:"Dead / stressed veg",        hex:"#a0a000", group:"Natural Veg"},
+  // AGRICULTURE (25–34)
+  {label:"Row crops (corn / soy)",     hex:"#d4e65a", group:"Agriculture"},
+  {label:"Orchards / fruit trees",     hex:"#b4d23c", group:"Agriculture"},
+  {label:"Vineyards",                  hex:"#91b932", group:"Agriculture"},
+  {label:"Rice paddy",                 hex:"#64c882", group:"Agriculture"},
+  {label:"Greenhouse / hoophouse",     hex:"#f0ffc8", group:"Agriculture"},
+  {label:"Hay / alfalfa field",        hex:"#c8e150", group:"Agriculture"},
+  {label:"Fallow / tilled field",      hex:"#cdb478", group:"Agriculture"},
+  {label:"Irrigated cropland",         hex:"#50c8a0", group:"Agriculture"},
+  {label:"Pasture / grazing land",     hex:"#aad76e", group:"Agriculture"},
+  {label:"Nursery / tree farm",        hex:"#3ca050", group:"Agriculture"},
+  // BARE GROUND (35–44)
+  {label:"Bare sandy soil",            hex:"#ead4a3", group:"Bare Ground"},
+  {label:"Bare clay / silt soil",      hex:"#bc8f5f", group:"Bare Ground"},
+  {label:"Bare rocky ground",          hex:"#a08c78", group:"Bare Ground"},
+  {label:"Gravel / cobble surface",    hex:"#b4a58c", group:"Bare Ground"},
+  {label:"Sand dune",                  hex:"#f0dc8c", group:"Bare Ground"},
+  {label:"Desert pavement / reg",      hex:"#c8af82", group:"Bare Ground"},
+  {label:"Exposed bedrock",            hex:"#8c7864", group:"Bare Ground"},
+  {label:"Eroded / gullied land",      hex:"#af643c", group:"Bare Ground"},
+  {label:"Beach / shoreline sand",     hex:"#faebb4", group:"Bare Ground"},
+  {label:"Alluvial fan / dry wash",    hex:"#d2be96", group:"Bare Ground"},
+  // URBAN (45–64)
+  {label:"High-density urban",         hex:"#64646e", group:"Urban"},
+  {label:"Low-density residential",    hex:"#a0a0a5", group:"Urban"},
+  {label:"Commercial / retail",        hex:"#82828c", group:"Urban"},
+  {label:"Industrial building",        hex:"#6e6464", group:"Urban"},
+  {label:"Warehouse / big box",        hex:"#beb9af", group:"Urban"},
+  {label:"Airport runway / tarmac",    hex:"#3c3c41", group:"Urban"},
+  {label:"Airport apron / taxiway",    hex:"#505055", group:"Urban"},
+  {label:"Railroad / rail yard",       hex:"#322d2d", group:"Urban"},
+  {label:"Paved road (major)",         hex:"#5a5a5f", group:"Urban"},
+  {label:"Unpaved road / track",       hex:"#b99b6e", group:"Urban"},
+  {label:"Parking lot",                hex:"#787373", group:"Urban"},
+  {label:"Bridge / overpass",          hex:"#918c82", group:"Urban"},
+  {label:"Solar panel array",          hex:"#1e3264", group:"Urban"},
+  {label:"Sports field / stadium",     hex:"#32cd32", group:"Urban"},
+  {label:"Golf course fairway",        hex:"#46be50", group:"Urban"},
+  {label:"Cemetery / memorial",        hex:"#c8dcb4", group:"Urban"},
+  {label:"Construction site",          hex:"#d2a050", group:"Urban"},
+  {label:"Rooftop — light / flat",     hex:"#dcdad2", group:"Urban"},
+  {label:"Rooftop — dark / pitched",   hex:"#504b46", group:"Urban"},
+  {label:"Concrete / white surface",   hex:"#e6e6e1", group:"Urban"},
+  // MINING (65–74)
+  {label:"Open pit — active face",     hex:"#c0392b", group:"Mining"},
+  {label:"Mine waste dump",            hex:"#a5281e", group:"Mining"},
+  {label:"Heap leach pad",             hex:"#d25a32", group:"Mining"},
+  {label:"Tailings pond",              hex:"#b46450", group:"Mining"},
+  {label:"Quarry / gravel pit",        hex:"#c88250", group:"Mining"},
+  {label:"Borrow pit",                 hex:"#be9664", group:"Mining"},
+  {label:"Oil / gas well pad",         hex:"#8c3c14", group:"Mining"},
+  {label:"Pipeline corridor",          hex:"#a05028", group:"Mining"},
+  {label:"Mine access road",           hex:"#af6e3c", group:"Mining"},
+  {label:"Disturbed / reclaimed land", hex:"#dca064", group:"Mining"},
+  // INFRASTRUCTURE (75–79)
+  {label:"Power line corridor",        hex:"#9b59b6", group:"Infrastructure"},
+  {label:"Wind turbine / wind farm",   hex:"#b478d2", group:"Infrastructure"},
+  {label:"Water tower / storage tank", hex:"#8250a0", group:"Infrastructure"},
+  {label:"Landfill / waste disposal",  hex:"#643c78", group:"Infrastructure"},
+  {label:"Communication tower",        hex:"#c896e6", group:"Infrastructure"},
+  // GEOLOGY (80–89)
+  {label:"Lava flow / volcanic rock",  hex:"#1e1919", group:"Geology"},
+  {label:"Salt flat / evaporite",      hex:"#f0f0eb", group:"Geology"},
+  {label:"Playa / dry lake bed",       hex:"#d7cdb9", group:"Geology"},
+  {label:"Snow / glacier ice",         hex:"#f5f8ff", group:"Geology"},
+  {label:"Landslide / mass movement",  hex:"#965a32", group:"Geology"},
+  {label:"River terrace / floodplain", hex:"#b9c8a0", group:"Geology"},
+  {label:"Karst / sinkhole terrain",   hex:"#786450", group:"Geology"},
+  {label:"Coastal cliff / escarpment", hex:"#a08264", group:"Geology"},
+  {label:"Braided river / gravel bar", hex:"#c3b9a0", group:"Geology"},
+  {label:"Cinder cone / tephra",       hex:"#372823", group:"Geology"},
+  // SPECIAL (90–99)
+  {label:"Building shadow",            hex:"#2c3e50", group:"Special"},
+  {label:"Terrain / hill shadow",      hex:"#1e2837", group:"Special"},
+  {label:"Cloud",                      hex:"#ffffff", group:"Special"},
+  {label:"Fire scar / burn area",      hex:"#28140a", group:"Special"},
+  {label:"Algae bloom / turbid water", hex:"#64b43c", group:"Special"},
+  {label:"Aquaculture pond",           hex:"#3c8ca0", group:"Special"},
+  {label:"Boat / vessel",              hex:"#ff8c00", group:"Special"},
+  {label:"Vehicle / heavy equipment",  hex:"#ffc800", group:"Special"},
+  {label:"Flood / inundation",         hex:"#4682b4", group:"Special"},
+  {label:"Unknown / mixed",            hex:"#808080", group:"Special"},
+];
+
+const GROUPS = ["All", "Water", "Natural Veg", "Agriculture", "Bare Ground",
+                "Urban", "Mining", "Infrastructure", "Geology", "Special"];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let activeClass  = 0;
+let brushSize    = 10;
+let isPainting   = false;
+let trainingPts  = {};
+let uploadedFile = null;
+let imgNaturalW  = 0;
+let imgNaturalH  = 0;
+let displayScale = 1;
+let activeGroup  = "All";
+
+// ── Build class UI ────────────────────────────────────────────────────────────
+
+function buildGroupTabs() {
+  const el = document.getElementById('group-tabs');
+  el.innerHTML = GROUPS.map(g =>
+    `<button class="gtab${g === 'All' ? ' active' : ''}"
+             onclick="setGroup('${g}')">${g}</button>`
+  ).join('');
+}
+
+function buildClassList() {
+  const el = document.getElementById('class-list');
+  el.innerHTML = CLASSES.map((cls, i) =>
+    `<button class="class-btn${i === activeClass ? ' active' : ''}"
+             id="cls-btn-${i}" data-group="${cls.group}"
+             onclick="selectClass(${i})" title="${cls.label}">
+       <span class="dot" style="background:${cls.hex}"></span>
+       <span class="lbl">${cls.label}</span>
+       <span class="cnt" id="cnt-${i}">0</span>
+     </button>`
+  ).join('');
+  updateActiveIndicator();
+}
+
+function setGroup(g) {
+  activeGroup = g;
+  document.querySelectorAll('.gtab').forEach(b =>
+    b.classList.toggle('active', b.textContent === g));
+  filterClasses();
+}
+
+function filterClasses() {
+  const q = document.getElementById('class-search').value.toLowerCase();
+  document.querySelectorAll('.class-btn').forEach((btn, i) => {
+    const matchGroup = activeGroup === 'All' || CLASSES[i].group === activeGroup;
+    const matchText  = !q || CLASSES[i].label.toLowerCase().includes(q);
+    btn.classList.toggle('hidden', !(matchGroup && matchText));
+  });
+}
+
+function selectClass(i) {
+  activeClass = i;
+  document.querySelectorAll('.class-btn').forEach((b, j) =>
+    b.classList.toggle('active', j === i));
+  updateActiveIndicator();
+  // Auto-switch group filter to show selected class
+  const g = CLASSES[i].group;
+  if (activeGroup !== 'All' && activeGroup !== g) setGroup('All');
+}
+
+function updateActiveIndicator() {
+  const cls = CLASSES[activeClass];
+  document.getElementById('active-dot').style.background   = cls.hex;
+  document.getElementById('active-label').textContent = cls.label;
+}
+
+function updateCounts() {
+  let classesWithData = 0;
+  CLASSES.forEach((cls, i) => {
+    const n   = (trainingPts[i] || []).length;
+    const btn = document.getElementById(`cls-btn-${i}`);
+    const cnt = document.getElementById(`cnt-${i}`);
+    if (!btn) return;
+    btn.classList.toggle('has-pts', n > 0);
+    if (cnt) cnt.textContent = n;
+    if (n > 0) classesWithData++;
+  });
+  const countEl = document.getElementById('trained-count');
+  if (classesWithData === 0) {
+    countEl.innerHTML = 'No training data yet';
+  } else {
+    countEl.innerHTML = `<strong>${classesWithData}</strong> class${classesWithData > 1 ? 'es' : ''} trained`;
+  }
+  const hasAny = classesWithData > 0;
+  document.getElementById('classify-btn').disabled = !hasAny || !uploadedFile;
+}
+
+buildGroupTabs();
+buildClassList();
+
+// ── File loading ──────────────────────────────────────────────────────────────
+
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('click', e => {
+  if (!e.target.closest('#canvas-container') && e.target.id !== 'file-input')
+    document.getElementById('file-input').click();
+});
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+function loadFile(f) {
+  uploadedFile = f;
+  const url = URL.createObjectURL(f);
+  const img  = document.getElementById('base-img');
+  img.onload = () => {
+    imgNaturalW = img.naturalWidth;
+    imgNaturalH = img.naturalHeight;
+    const canvas = document.getElementById('paint-canvas');
+    canvas.width  = img.offsetWidth  || img.naturalWidth;
+    canvas.height = img.offsetHeight || img.naturalHeight;
+    displayScale  = canvas.width / imgNaturalW;
+    document.getElementById('upload-prompt').style.display  = 'none';
+    document.getElementById('canvas-container').style.display = 'block';
+    clearAll();
+  };
+  img.src = url;
+}
+
+// ── Canvas painting ───────────────────────────────────────────────────────────
+
+const paintCanvas = document.getElementById('paint-canvas');
+const ctx         = paintCanvas.getContext('2d');
+
+function getPos(e) {
+  const rect  = paintCanvas.getBoundingClientRect();
+  const scaleX = paintCanvas.width  / rect.width;
+  const scaleY = paintCanvas.height / rect.height;
+  const src = e.touches ? e.touches[0] : e;
+  return {
+    x: (src.clientX - rect.left) * scaleX,
+    y: (src.clientY - rect.top)  * scaleY,
+  };
+}
+
+function paintAt(pos) {
+  const cid   = activeClass;
+  const color = CLASSES[cid].hex;
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle   = color;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, brushSize, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  if (!trainingPts[cid]) trainingPts[cid] = [];
+  trainingPts[cid].push({
+    x: Math.round(pos.x / displayScale),
+    y: Math.round(pos.y / displayScale),
+  });
+  updateCounts();
+}
+
+paintCanvas.addEventListener('mousedown',  e => { isPainting = true; paintAt(getPos(e)); });
+paintCanvas.addEventListener('mousemove',  e => { if (isPainting) paintAt(getPos(e)); });
+paintCanvas.addEventListener('mouseup',    () => isPainting = false);
+paintCanvas.addEventListener('mouseleave', () => isPainting = false);
+paintCanvas.addEventListener('touchstart', e => { e.preventDefault(); isPainting = true; paintAt(getPos(e)); }, {passive:false});
+paintCanvas.addEventListener('touchmove',  e => { e.preventDefault(); if (isPainting) paintAt(getPos(e)); }, {passive:false});
+paintCanvas.addEventListener('touchend',   () => isPainting = false);
+
+function clearClass() {
+  delete trainingPts[activeClass];
+  redrawCanvas(); updateCounts();
+}
+
+function clearAll() {
+  trainingPts = {};
+  ctx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+  updateCounts();
+}
+
+function redrawCanvas() {
+  ctx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+  for (const [cid, pts] of Object.entries(trainingPts)) {
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle   = CLASSES[+cid].hex;
+    pts.forEach(pt => {
+      ctx.beginPath();
+      ctx.arc(pt.x * displayScale, pt.y * displayScale, brushSize, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  ctx.globalAlpha = 1;
+}
+
+new ResizeObserver(() => {
+  const img = document.getElementById('base-img');
+  if (!img.naturalWidth) return;
+  paintCanvas.width  = img.offsetWidth;
+  paintCanvas.height = img.offsetHeight;
+  displayScale = paintCanvas.width / imgNaturalW;
+  redrawCanvas();
+}).observe(document.getElementById('base-img'));
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+
+function showTab(tab) {
+  document.getElementById('map-panel').style.display   = tab === 'map'  ? 'block' : 'none';
+  document.getElementById('baru-panel').style.display  = tab === 'baru' ? 'block' : 'none';
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('tab-map').classList.toggle('active',  tab === 'map');
+  document.getElementById('tab-baru').classList.toggle('active', tab === 'baru');
+}
+
+// ── Classify ──────────────────────────────────────────────────────────────────
+
+async function classify() {
+  const btn = document.getElementById('classify-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Classifying…';
+
+  const form = new FormData();
+  form.append('image',        uploadedFile);
+  form.append('training',     JSON.stringify(trainingPts));
+  form.append('brush_radius', brushSize);
+
+  try {
+    const r    = await fetch('/api/classify_trained', {method:'POST', body:form});
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Server error');
+
+    document.getElementById('map-img').src = 'data:image/png;base64,' + data.map;
+    buildLegend(data.legend);
+    document.getElementById('map-panel').style.display   = 'block';
+    document.getElementById('empty-state').style.display = 'none';
+
+    renderBaru(data.baru);
+    document.getElementById('fix-btn').disabled    = data.baru.perfect;
+    document.getElementById('fix-result').style.display = 'none';
+    showTab('map');
+
+  } catch(e) {
+    alert('Classification failed: ' + e.message);
+  }
+
+  btn.disabled  = false;
+  btn.textContent = 'Classify again';
+  updateCounts();
+}
+
+// ── Baru Fix ──────────────────────────────────────────────────────────────────
+
+async function baruFix() {
+  const btn = document.getElementById('fix-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-top-color:#b8a0f0"></span>Fixing…';
+
+  const form = new FormData();
+  form.append('image',        uploadedFile);
+  form.append('training',     JSON.stringify(trainingPts));
+  form.append('brush_radius', brushSize);
+
+  try {
+    const r    = await fetch('/api/baru_fix', {method:'POST', body:form});
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Server error');
+
+    document.getElementById('map-img').src = 'data:image/png;base64,' + data.map;
+    buildLegend(data.legend);
+    renderBaru(data.baru);
+
+    const res = document.getElementById('fix-result');
+    res.style.display = 'block';
+    const summary = (data.baru.fix_summary || []).join('\n') || 'No outliers removed';
+    const delta   = (data.baru.deficit_before || 0) - (data.baru.deficit_after || 0);
+    res.innerHTML =
+      `<strong>Baru applied — Mahalanobis outlier removal</strong><br>
+       ${(data.baru.fix_summary || []).map(s => `<div>${s}</div>`).join('') || '<div>Classes were already clean</div>'}
+       <div style="margin-top:6px; color:#5c5">
+         Deficit: ${data.baru.deficit_before} → ${data.baru.deficit_after}
+         (−${delta} improvement)
+       </div>`;
+
+    document.getElementById('fix-btn').disabled = data.baru.perfect;
+    showTab('baru');
+
+  } catch(e) {
+    alert('Baru fix failed: ' + e.message);
+  }
+
+  btn.innerHTML = '⚡ Baru Fix';
+}
+
+// ── Render helpers ────────────────────────────────────────────────────────────
+
+function buildLegend(legendData) {
+  document.getElementById('legend').innerHTML =
+    `<div class="legend-title">Classified Land Use</div>
+     <div class="legend-grid">
+       ${legendData.map(c =>
+         `<div class="legend-item">
+            <div class="swatch" style="background:${c.hex}"></div>
+            <span class="legend-lbl">${c.label}</span>
+          </div>`
+       ).join('')}
+     </div>`;
+}
+
+function renderBaru(baru) {
+  document.getElementById('baru-panel').style.display = 'block';
+
+  // State value
+  const sv = document.getElementById('state-val');
+  sv.textContent = baru.state;
+  sv.className   = 'state-val ' +
+    (baru.perfect ? 'perfect' : baru.state < 100 ? 'warn' : 'bad');
+
+  const stateDesc = baru.perfect
+    ? 'All classes well-separated — publishable'
+    : `${baru.n_confused} confused pair${baru.n_confused !== 1 ? 's' : ''} · add more training or use Baru Fix`;
+  document.getElementById('state-desc').textContent = stateDesc;
+
+  const pct  = baru.perfect ? 100 : Math.max(0, 100 - Math.round(baru.state / 3));
+  const fill = document.getElementById('progress-fill');
+  fill.style.width      = pct + '%';
+  fill.style.background = baru.perfect ? '#5c5' : baru.state < 100 ? '#fa0' : '#f55';
+
+  // Separability table
+  document.getElementById('sep-tbody').innerHTML = (baru.pairs || []).map(p => {
+    const barW  = Math.round((p.jm_int || 0) / 2);
+    const color = p.confused ? '#fa0' : '#4d9';
+    const aLabel = CLASSES[p.i] ? CLASSES[p.i].label : p.i_label || p.i;
+    const bLabel = CLASSES[p.j] ? CLASSES[p.j].label : p.j_label || p.j;
+    return `<tr class="${p.confused ? 'confused' : 'good'}">
+      <td>${aLabel}</td><td>${bLabel}</td>
+      <td><div class="jm-bar-wrap">
+        <div class="jm-bar" style="width:${barW}px; background:${color}"></div>
+        ${p.jm.toFixed(2)}
+      </div></td>
+      <td>${p.confused ? '⚠ confused' : '✓ ok'}</td>
+    </tr>`;
+  }).join('');
+
+  // Recommendations
+  const recEl = document.getElementById('baru-rec');
+  if (!baru.perfect && baru.recommendations && baru.recommendations.length > 0) {
+    recEl.style.display = 'block';
+    document.getElementById('baru-steps').innerHTML =
+      baru.recommendations.map((s, i) =>
+        `<div class="baru-step">${i+1}. <span>${s.replace(/_/g,' ')}</span></div>`
+      ).join('');
+  } else {
+    recEl.style.display = 'none';
+  }
+
+  // Badge
+  document.getElementById('baru-badge').style.display = baru.perfect ? 'none' : 'inline';
+}
+</script>
+
+</body>
+</html>
