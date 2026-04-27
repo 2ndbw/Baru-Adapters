@@ -1,14 +1,36 @@
-import subprocess, sys, os, io, base64, json
+import subprocess, sys, os, io, base64, json, uuid, time
 import numpy as np
 from flask import Flask, render_template, jsonify, request
 from PIL import Image
 from sklearn.cluster import KMeans
+from werkzeug.utils import secure_filename
 
 sys.path.insert(0, os.path.dirname(__file__))
 import land_classifier as lc
 
 app = Flask(__name__)
-BASE = os.path.dirname(__file__)
+BASE        = os.path.dirname(__file__)
+UPLOADS_DIR = os.path.join(BASE, 'uploads')
+CARS_FILE   = os.path.join(BASE, 'cars.json')
+ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', 'baru-admin-2024')
+MAX_PHOTO_MB = 10
+
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+
+def _load_cars():
+    if not os.path.exists(CARS_FILE):
+        return []
+    try:
+        with open(CARS_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _save_cars(cars):
+    with open(CARS_FILE, 'w') as f:
+        json.dump(cars, f, indent=2)
 
 ADAPTERS = [
     {
@@ -383,6 +405,88 @@ def _build_baru_info(pairs, total_deficit, optimizer, class_ids):
         "recommendations": recommendations,
         "n_confused":      sum(1 for p in pairs if p["confused"]),
     }
+
+
+# ── Community Cars ────────────────────────────────────────────────────────────
+
+ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+
+
+def _allowed_photo(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@app.route("/api/cars", methods=["GET"])
+def get_cars():
+    cars = _load_cars()
+    return jsonify({"cars": cars})
+
+
+@app.route("/api/cars", methods=["POST"])
+def submit_car():
+    title = request.form.get("title", "").strip()
+    if not title:
+        return jsonify({"error": "Title is required"}), 400
+    if len(title) > 80:
+        return jsonify({"error": "Title too long"}), 400
+
+    desc = request.form.get("desc", "").strip()[:400]
+    photo_url = None
+
+    if "photo" in request.files:
+        photo = request.files["photo"]
+        if photo.filename and _allowed_photo(photo.filename):
+            photo.seek(0, 2)
+            size_mb = photo.tell() / (1024 * 1024)
+            photo.seek(0)
+            if size_mb > MAX_PHOTO_MB:
+                return jsonify({"error": f"Photo too large (max {MAX_PHOTO_MB} MB)"}), 400
+            ext    = photo.filename.rsplit('.', 1)[1].lower()
+            fname  = f"{uuid.uuid4().hex}.{ext}"
+            photo.save(os.path.join(UPLOADS_DIR, fname))
+            photo_url = f"/uploads/{fname}"
+
+    car = {
+        "id":           uuid.uuid4().hex[:12],
+        "title":        title,
+        "desc":         desc,
+        "photo_url":    photo_url,
+        "submitted_at": time.strftime("%b %d, %Y"),
+    }
+
+    cars = _load_cars()
+    cars.insert(0, car)
+    _save_cars(cars)
+
+    return jsonify({"ok": True, "car": car}), 201
+
+
+@app.route("/api/cars/<car_id>", methods=["DELETE"])
+def delete_car(car_id):
+    token = request.headers.get("X-Admin-Token", "")
+    if token != ADMIN_TOKEN:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    cars    = _load_cars()
+    to_del  = next((c for c in cars if c["id"] == car_id), None)
+    if not to_del:
+        return jsonify({"error": "Not found"}), 404
+
+    if to_del.get("photo_url"):
+        fname = to_del["photo_url"].lstrip("/uploads/")
+        path  = os.path.join(UPLOADS_DIR, fname)
+        if os.path.exists(path):
+            os.remove(path)
+
+    cars = [c for c in cars if c["id"] != car_id]
+    _save_cars(cars)
+    return jsonify({"ok": True})
+
+
+@app.route("/uploads/<filename>")
+def serve_upload(filename):
+    from flask import send_from_directory
+    return send_from_directory(UPLOADS_DIR, secure_filename(filename))
 
 
 if __name__ == "__main__":
